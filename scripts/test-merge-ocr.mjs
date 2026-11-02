@@ -36,5 +36,6 @@ assert.equal(merged.previous, 14645);
 assert.equal(merged.current, 14978);
 assert.equal(merged.extras, 30);
 assert.equal(merged.factor, 1);
+assert.ok(merged.rate != null && Math.abs(merged.rate - 0.87571) < 0.01, "tarifa estimada");
 
 console.log("OK merge com correcao de leitura");

@@ -226,6 +226,21 @@ function extractReadings(text) {
   return { previous, current };
 }
 
+function extractTotalHint(text) {
+  const normalized = normalizeText(text);
+  const labeled = normalized.match(
+    /total\s*a\s*pagar[^\d]{0,20}(\d{1,5}[.,]\d{2})/i,
+  );
+  if (labeled) return parseBrNumber(labeled[1]);
+  // Cabeçalho OCR: consumo + total (333 321,61)
+  const pair = normalized.match(/\b(\d{2,4})\s+(\d{2,4}[.,]\d{2})(?!\d)/);
+  if (pair) {
+    const money = parseBrNumber(pair[2]);
+    if (money != null && money >= 30 && money < 100000) return money;
+  }
+  return null;
+}
+
 function extractRate(text) {
   const normalized = normalizeText(text);
 
@@ -353,14 +368,14 @@ function extractConsumptionHint(text) {
     if (a < 30 || a > 8000 || b < 30 || b > 8000) continue;
     if (Math.abs(a - b) <= 5) return Math.max(a, b);
   }
-  // OCR sparse: "333" seguido de valor em R$ (321,61)
+  // OCR sparse no cabeçalho: "333" + "321,61"
   const nearTotal = normalized.match(
-    /\b(\d{2,4})\b[^\d]{0,24}(\d{2,4}[.,]\d{2})\b/,
+    /\b(\d{2,4})\s+(\d{2,4}[.,]\d{2})(?!\d)/,
   );
   if (nearTotal) {
     const kwh = parseBrNumber(nearTotal[1]);
     const money = parseBrNumber(nearTotal[2]);
-    if (kwh != null && money != null && kwh >= 50 && kwh <= 5000 && money > 20) {
+    if (kwh != null && money != null && kwh >= 50 && kwh <= 5000 && money >= 30) {
       return kwh;
     }
   }
@@ -372,13 +387,16 @@ function extractConsumptionHint(text) {
  */
 export function parseBillText(ocrText) {
   const text = String(ocrText || "");
+  const consumptionHint = extractConsumptionHint(text);
+  const totalHint = extractTotalHint(text);
   const raw = {
     monthKey: extractMonthKey(text),
     ...extractReadings(text),
     rate: extractRate(text),
     extras: extractExtras(text),
     factor: extractFactor(text),
-    consumptionHint: extractConsumptionHint(text),
+    consumptionHint,
+    totalHint,
   };
 
   // Se a leitura atual e o consumo batem, recalcula a anterior (OCR costuma errar 1 dígito).
@@ -393,6 +411,20 @@ export function parseBillText(ocrText) {
       const mismatch = raw.previous == null
         || Math.abs((raw.current - raw.previous) * factor - raw.consumptionHint) > Math.max(5, raw.consumptionHint * 0.05);
       if (mismatch) raw.previous = expectedPrevious;
+    }
+  }
+
+  // Fallback de tarifa: (total - COSIP) / consumo
+  if (
+    raw.rate == null
+    && raw.consumptionHint
+    && raw.totalHint
+    && raw.extras != null
+    && raw.consumptionHint > 0
+  ) {
+    const estimated = (raw.totalHint - raw.extras) / raw.consumptionHint;
+    if (estimated > 0.05 && estimated < 5) {
+      raw.rate = Number(estimated.toFixed(6));
     }
   }
 
@@ -426,6 +458,7 @@ function readingError(item, consumptionHint) {
 export function mergeParsedResults(results) {
   const list = (results || []).filter(Boolean);
   const consumptionHint = list.map((item) => item.consumptionHint).find((v) => v != null) ?? null;
+  const totalHint = list.map((item) => item.totalHint).find((v) => v != null) ?? null;
 
   const readingCandidate = [...list]
     .filter((item) => item.previous != null && item.current != null)
@@ -439,6 +472,8 @@ export function mergeParsedResults(results) {
     rate: null,
     extras: null,
     rawPreview: "",
+    consumptionHint,
+    totalHint,
   };
 
   for (const item of list) {
@@ -449,6 +484,19 @@ export function mergeParsedResults(results) {
     if (!merged.rawPreview && item.rawPreview) merged.rawPreview = item.rawPreview;
   }
 
+  if (
+    merged.rate == null
+    && merged.consumptionHint
+    && merged.totalHint
+    && merged.extras != null
+    && merged.consumptionHint > 0
+  ) {
+    const estimated = (merged.totalHint - merged.extras) / merged.consumptionHint;
+    if (estimated > 0.05 && estimated < 5) {
+      merged.rate = Number(estimated.toFixed(6));
+    }
+  }
+
   const sanitized = sanitizeParsed({
     ...merged,
     confidence: 0,
@@ -456,5 +504,6 @@ export function mergeParsedResults(results) {
     rawPreview: merged.rawPreview,
   });
   sanitized.consumptionHint = consumptionHint;
+  sanitized.totalHint = totalHint;
   return sanitized;
 }
