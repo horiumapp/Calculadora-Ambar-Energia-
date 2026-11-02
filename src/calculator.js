@@ -534,8 +534,8 @@ function renderDashboard() {
   $("history-empty").hidden = hasData;
   $("history-table").hidden = !hasData;
   $("kpi-months").textContent = String(items.length);
-  // Só libera limpar histórico a partir de 12 faturas salvas.
-  if (clearBtn) clearBtn.hidden = items.length < 12;
+  // Liberado para testes: limpar histórico com qualquer quantidade salva.
+  if (clearBtn) clearBtn.hidden = items.length < 1;
 
   if (!hasData) {
     $("kpi-avg").textContent = "—";
@@ -697,7 +697,7 @@ export function initCalculator(userId) {
   });
 
   $("clear-history").addEventListener("click", async () => {
-    if (billsCache.length < 12) return;
+    if (billsCache.length < 1) return;
     if (!confirm("Deseja apagar todo o histórico mensal da sua conta?")) return;
     try {
       await clearBills(currentUserId);
