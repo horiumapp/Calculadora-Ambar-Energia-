@@ -277,13 +277,15 @@ function extractExtras(text) {
 
 function extractFactor(text) {
   const normalized = normalizeText(text);
+  // Constante residencial é tipicamente 1 ou 1,000 — nunca centenas (isso é consumo).
+  const isPlausibleFactor = (num) => num != null && num > 0 && num <= 100;
 
   const row = normalized.match(
-    /en\s*[a-z]{0,12}\s*total\s+(\d{4,6})\s+(\d{4,6})\s+(\d+[.,]\d{1,3}|\d+)/i,
+    /en\s*[a-z]{0,12}\s*total\s+(\d{4,6})\s+(\d{4,6})\s+(\d+[.,]\d{1,3}|\d+(?!\d))/i,
   );
   if (row) {
     const factor = parseBrNumber(row[3]);
-    if (factor != null && factor > 0 && factor <= 1000) return factor;
+    if (isPlausibleFactor(factor)) return factor;
   }
 
   const labeled = normalized.match(
@@ -291,7 +293,7 @@ function extractFactor(text) {
   );
   if (labeled) {
     const factor = parseBrNumber(labeled[1]);
-    if (factor != null && factor > 0 && factor <= 1000) return factor;
+    if (isPlausibleFactor(factor)) return factor;
   }
 
   return null;
@@ -342,20 +344,18 @@ function extractConsumptionHint(text) {
     const value = parseBrNumber(labeled[1]);
     if (value != null && value > 0 && value < 100000) return value;
   }
-  // Linha En Ativa ... medido faturado (iguais ou quase iguais no fim)
-  const row = normalized.match(
-    /en\s*[a-z]{0,12}\s*total[\s\S]{0,120}?(\d{2,4})\s+(\d{2,4})\b/i,
-  );
-  if (row) {
-    const a = parseBrNumber(row[1]);
-    const b = parseBrNumber(row[2]);
-    if (a != null && b != null && Math.abs(a - b) <= 5) {
-      return Math.max(a, b);
-    }
+  // Pares medido/faturado no fim da linha En Ativa (ex.: 331 333 ou 333 333).
+  const pairs = [...normalized.matchAll(/\b(\d{2,4})\s+(\d{2,4})\b/g)];
+  for (const pair of pairs) {
+    const a = parseBrNumber(pair[1]);
+    const b = parseBrNumber(pair[2]);
+    if (a == null || b == null) continue;
+    if (a < 30 || a > 8000 || b < 30 || b > 8000) continue;
+    if (Math.abs(a - b) <= 5) return Math.max(a, b);
   }
-  // OCR sparse: "333" perto de total a pagar
+  // OCR sparse: "333" seguido de valor em R$ (321,61)
   const nearTotal = normalized.match(
-    /\b(\d{2,4})\b[^\d]{0,20}(\d{2,4}[.,]\d{2})\b/,
+    /\b(\d{2,4})\b[^\d]{0,24}(\d{2,4}[.,]\d{2})\b/,
   );
   if (nearTotal) {
     const kwh = parseBrNumber(nearTotal[1]);
