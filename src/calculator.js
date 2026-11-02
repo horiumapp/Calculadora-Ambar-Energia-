@@ -101,9 +101,63 @@ function writeFormDraft(draft) {
   if (!draft) return;
   $("previous").value = draft.previous ?? "";
   $("current").value = draft.current ?? "";
-  if (draft.factor != null && draft.factor !== "") $("factor").value = draft.factor;
-  if (draft.rate != null && draft.rate !== "") $("rate").value = draft.rate;
-  if (draft.extras != null && draft.extras !== "") $("extras").value = draft.extras;
+  $("factor").value = draft.factor ?? "";
+  $("rate").value = draft.rate ?? "";
+  $("extras").value = draft.extras ?? "";
+}
+
+function isDraftEmpty(draft) {
+  if (!draft) return true;
+  return ["previous", "current", "factor", "rate", "extras"].every(
+    (key) => draft[key] == null || String(draft[key]).trim() === "",
+  );
+}
+
+function clearFormFields({ keepMonth = true } = {}) {
+  if (!keepMonth) {
+    $("bill-month-input").value = "";
+    selectedMonthKey = null;
+  }
+  $("previous").value = "";
+  $("current").value = "";
+  $("factor").value = "";
+  $("rate").value = "";
+  $("extras").value = "";
+  setImportStatus("");
+  const fields = $("import-fields");
+  if (fields) {
+    fields.hidden = true;
+    fields.innerHTML = "";
+  }
+  clearResultPanel();
+  syncMonthLabels();
+}
+
+function syncFormWithSavedOrClear() {
+  const monthKey = $("bill-month-input").value || selectedMonthKey;
+  if (!monthKey) {
+    clearFormFields({ keepMonth: true });
+    return;
+  }
+  const saved = billsCache.find((item) => item.monthKey === monthKey);
+  const savedDraft = draftFromSaved(saved);
+  if (savedDraft) {
+    writeFormDraft(savedDraft);
+    monthDrafts[monthKey] = savedDraft;
+    latest = { ...saved };
+    updateStatusPanel(saved);
+    refreshResultFromForm();
+    return;
+  }
+  const draft = monthDrafts[monthKey];
+  if (draft && !isDraftEmpty(draft)) {
+    writeFormDraft(draft);
+    updateStatusPanel(null);
+    refreshResultFromForm();
+    return;
+  }
+  delete monthDrafts[monthKey];
+  clearFormFields({ keepMonth: true });
 }
 
 function setImportStatus(message, kind = "") {
@@ -288,9 +342,9 @@ function draftFromSaved(item) {
   return {
     previous: String(item.previous),
     current: String(item.current),
-    factor: item.factor != null ? String(item.factor) : $("factor").value,
-    rate: item.rate != null ? String(item.rate) : $("rate").value,
-    extras: item.extras != null ? String(item.extras) : $("extras").value,
+    factor: item.factor != null ? String(item.factor) : "",
+    rate: item.rate != null ? String(item.rate) : "",
+    extras: item.extras != null ? String(item.extras) : "",
   };
 }
 
@@ -305,8 +359,9 @@ function applyMonthSwitch(fromMonthKey, toMonthKey, fallbackCurrent) {
     return "restored";
   }
 
-  if (monthDrafts[toMonthKey]) {
-    writeFormDraft(monthDrafts[toMonthKey]);
+  const existingDraft = monthDrafts[toMonthKey];
+  if (existingDraft && !isDraftEmpty(existingDraft)) {
+    writeFormDraft(existingDraft);
     updateStatusPanel(null);
     return "draft";
   }
@@ -323,33 +378,41 @@ function applyMonthSwitch(fromMonthKey, toMonthKey, fallbackCurrent) {
       const draft = {
         previous: String(carry),
         current: "",
-        factor: $("factor").value,
-        rate: $("rate").value,
-        extras: $("extras").value,
+        factor: "",
+        rate: "",
+        extras: "",
       };
       writeFormDraft(draft);
       monthDrafts[toMonthKey] = draft;
+      clearResultPanel();
       updateStatusPanel(null);
       $("current").focus();
       return "carry";
     }
   }
 
+  delete monthDrafts[toMonthKey];
+  clearFormFields({ keepMonth: true });
+  return "cleared";
+}
+
+function clearResultPanel() {
+  latest = null;
+  $("summary-consumption").textContent = "—";
+  $("summary-total").textContent = "—";
+  $("consumption").textContent = "—";
+  $("rate-label").textContent = "—";
+  $("energy-cost").textContent = "—";
+  $("extra-cost").textContent = "—";
+  $("total").textContent = "—";
   updateStatusPanel(null);
-  return "unchanged";
 }
 
 function refreshResultFromForm() {
-  if ($("previous").value !== "" && $("current").value !== "") calculate();
-  else {
-    latest = null;
-    $("summary-consumption").textContent = "—";
-    $("summary-total").textContent = "—";
-    $("consumption").textContent = "—";
-    $("energy-cost").textContent = "—";
-    $("extra-cost").textContent = "—";
-    $("total").textContent = "—";
-    updateStatusPanel(null);
+  if ($("previous").value !== "" && $("current").value !== "" && $("rate").value !== "") {
+    calculate();
+  } else {
+    clearResultPanel();
   }
 }
 
@@ -594,15 +657,15 @@ export async function reloadBills(userId = currentUserId) {
   }
   await refreshPendingQueue();
   billsCache = mergeBillsWithQueue(remote, pendingQueue);
+  const savedKeys = new Set(billsCache.map((item) => item.monthKey));
+  Object.keys(monthDrafts).forEach((key) => {
+    if (!savedKeys.has(key) && isDraftEmpty(monthDrafts[key])) delete monthDrafts[key];
+  });
   billsCache.forEach((item) => {
     const draft = draftFromSaved(item);
     if (draft) monthDrafts[item.monthKey] = draft;
   });
-  const current = billsCache.find((item) => item.monthKey === selectedMonthKey);
-  if (current) {
-    latest = current;
-    updateStatusPanel(current);
-  }
+  syncFormWithSavedOrClear();
   renderDashboard();
   updateSyncBanner({ remaining: pendingQueue.length });
   await syncPendingBills();
@@ -610,10 +673,9 @@ export async function reloadBills(userId = currentUserId) {
 
 export function initCalculator(userId) {
   currentUserId = userId;
-  selectedMonthKey = $("bill-month-input").value;
+  selectedMonthKey = $("bill-month-input").value || null;
+  clearFormFields({ keepMonth: true });
   syncMonthLabels();
-  calculate();
-  snapshotMonthDraft(selectedMonthKey);
 
   $("calc-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -708,8 +770,7 @@ export function initCalculator(userId) {
       pendingQueue = [];
       billsCache = [];
       monthDrafts = {};
-      latest = null;
-      updateStatusPanel(null);
+      clearFormFields({ keepMonth: false });
       updateSyncBanner({ remaining: 0 });
       renderDashboard();
     } catch (error) {

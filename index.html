@@ -170,19 +170,19 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
       <section class="summary-bar" aria-live="polite">
         <div>
           <span>CONTA MÊS</span>
-          <strong id="bill-month">OUTUBRO/2026</strong>
+          <strong id="bill-month">—</strong>
         </div>
         <div>
           <span>VENCIMENTO</span>
-          <strong id="due-date">05/11/2026</strong>
+          <strong id="due-date">—</strong>
         </div>
         <div>
           <span>CONSUMO (KWH)</span>
-          <strong id="summary-consumption">333</strong>
+          <strong id="summary-consumption">—</strong>
         </div>
         <div class="summary-total">
           <span>TOTAL A PAGAR (R$)</span>
-          <strong id="summary-total">321,61</strong>
+          <strong id="summary-total">—</strong>
         </div>
       </section>
 
@@ -215,19 +215,19 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
             <h2 class="bar bar-orange">DADOS DA LEITURA (KWH)</h2>
             <div class="section-body">
               <label>Conta mês
-                <input id="bill-month-input" type="month" value="2026-10" required>
+                <input id="bill-month-input" type="month" required>
                 <small>Ao mudar para o mês seguinte, a leitura atual vira a leitura anterior automaticamente.</small>
               </label>
               <div class="fields two">
                 <label>Leitura anterior
-                  <input id="previous" type="number" min="0" step="any" value="14645" required>
+                  <input id="previous" type="number" min="0" step="any" required>
                 </label>
                 <label>Leitura atual
-                  <input id="current" type="number" min="0" step="any" value="14978" required>
+                  <input id="current" type="number" min="0" step="any" required>
                 </label>
               </div>
               <label>Constante do medidor
-                <input id="factor" type="number" min="0" step="any" value="1" required>
+                <input id="factor" type="number" min="0" step="any" required>
               </label>
             </div>
           </section>
@@ -236,10 +236,10 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
             <h2 class="bar bar-orange">TARIFA E COBRANÇAS</h2>
             <div class="section-body">
               <label>Tarifa de energia (R$/kWh)
-                <input id="rate" type="number" min="0" step="any" value="0.875710" required>
+                <input id="rate" type="number" min="0" step="any" required>
               </label>
               <label>Contr. iluminação pública — COSIP (R$)
-                <input id="extras" type="number" min="0" step="any" value="30.00" required>
+                <input id="extras" type="number" min="0" step="any" required>
               </label>
               <div class="actions">
                 <button class="primary" type="submit">Calcular conta</button>
@@ -267,21 +267,21 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
                 <tbody>
                   <tr>
                     <td>CONSUMO</td>
-                    <td id="consumption">333 kWh</td>
-                    <td id="rate-label">0,875710</td>
-                    <td id="energy-cost">291,61</td>
+                    <td id="consumption">—</td>
+                    <td id="rate-label">—</td>
+                    <td id="energy-cost">—</td>
                   </tr>
                   <tr>
                     <td>CONTR. ILUMINACAO PUB. (COSIP)</td>
                     <td>—</td>
                     <td>—</td>
-                    <td id="extra-cost">30,00</td>
+                    <td id="extra-cost">—</td>
                   </tr>
                 </tbody>
               </table>
               <div class="total-row">
                 <span>TOTAL ESTIMADO A PAGAR</span>
-                <strong id="total">R$ 321,61</strong>
+                <strong id="total">—</strong>
               </div>
               <p class="note">
                 <strong>Importante:</strong> estimativa com base nos valores informados.
