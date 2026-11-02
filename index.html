@@ -196,84 +196,15 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
           <section class="bill-section">
             <h2 class="bar bar-orange">IMPORTAR FATURA</h2>
             <div class="section-body import-bill">
-              <p class="import-hint">Fotografe <strong>só a área marcada</strong> abaixo — da barra CONTA MÊS até a linha da iluminação pública (COSIP). Evite PIX, código de barras e QR.</p>
-
-              <figure class="import-guide" aria-label="Área da fatura para fotografar">
-                <svg class="import-guide-svg" viewBox="0 0 320 290" role="img" aria-labelledby="import-guide-title">
-                  <title id="import-guide-title">Guia visual da área da fatura</title>
-                  <!-- Folha da fatura -->
-                  <rect x="36" y="10" width="200" height="270" fill="#fff" stroke="#1a3a6b" stroke-width="1.5"/>
-                  <!-- Topo irrelevante (fora do foco) -->
-                  <rect x="36" y="10" width="200" height="28" fill="#e8edf3" opacity="0.9"/>
-                  <text x="136" y="28" text-anchor="middle" fill="#8a97a8" font-size="8" font-family="IBM Plex Sans, sans-serif">cabeçalho / QR (não precisa)</text>
-
-                  <!-- Zona 1: CONTA MÊS -->
-                  <rect class="guide-zone" x="42" y="44" width="188" height="42" fill="rgba(242,140,0,0.12)" stroke="#f28c00" stroke-width="1.8"/>
-                  <rect x="42" y="44" width="188" height="14" fill="#f28c00"/>
-                  <text x="136" y="54" text-anchor="middle" fill="#fff" font-size="7" font-weight="700" font-family="IBM Plex Sans, sans-serif">CONTA MÊS · VENCIMENTO · CONSUMO · TOTAL</text>
-                  <text x="52" y="72" fill="#1a3a6b" font-size="8" font-family="IBM Plex Mono, monospace">OUT/2026   05/11   333   321,61</text>
-
-                  <!-- Meio frouxo -->
-                  <rect x="42" y="92" width="188" height="28" fill="#f4f6f9"/>
-                  <text x="136" y="110" text-anchor="middle" fill="#9aa5b4" font-size="7" font-family="IBM Plex Sans, sans-serif">dados do cliente / unidade</text>
-
-                  <!-- Zona 2: Leituras -->
-                  <rect class="guide-zone" x="42" y="128" width="188" height="58" fill="rgba(26,58,107,0.08)" stroke="#1a3a6b" stroke-width="1.8"/>
-                  <rect x="42" y="128" width="188" height="14" fill="#1a3a6b"/>
-                  <text x="136" y="138" text-anchor="middle" fill="#fff" font-size="7" font-weight="700" font-family="IBM Plex Sans, sans-serif">DADOS DA LEITURA (KWH)</text>
-                  <text x="52" y="156" fill="#1a3a6b" font-size="7.5" font-family="IBM Plex Mono, monospace">En Ativa  Atual  Anterior</text>
-                  <text x="52" y="172" fill="#1a3a6b" font-size="9" font-weight="700" font-family="IBM Plex Mono, monospace">          14978   14645</text>
-
-                  <!-- Zona 3: COSIP -->
-                  <rect class="guide-zone" x="42" y="196" width="188" height="48" fill="rgba(242,140,0,0.10)" stroke="#f28c00" stroke-width="1.8"/>
-                  <rect x="42" y="196" width="188" height="14" fill="#2c4a6e"/>
-                  <text x="136" y="206" text-anchor="middle" fill="#fff" font-size="7" font-weight="700" font-family="IBM Plex Sans, sans-serif">DESCRIÇÃO DA CONTA</text>
-                  <text x="52" y="222" fill="#1a3a6b" font-size="7.5" font-family="IBM Plex Mono, monospace">CONSUMO … A R$ 0,875710</text>
-                  <text x="52" y="236" fill="#1a3a6b" font-size="7.5" font-family="IBM Plex Mono, monospace">COSIP / Iluminação pública</text>
-
-                  <!-- Rodapé irrelevante -->
-                  <rect x="36" y="252" width="200" height="28" fill="#e8edf3" opacity="0.9"/>
-                  <text x="136" y="270" text-anchor="middle" fill="#8a97a8" font-size="8" font-family="IBM Plex Sans, sans-serif">PIX / código de barras (não precisa)</text>
-
-                  <!-- Moldura da área útil -->
-                  <rect x="38" y="40" width="196" height="208" fill="none" stroke="#f28c00" stroke-width="2.4" stroke-dasharray="6 4"/>
-
-                  <!-- Legenda lateral -->
-                  <g font-family="IBM Plex Sans, sans-serif">
-                    <circle cx="262" cy="65" r="9" fill="#f28c00"/>
-                    <text x="262" y="68" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">1</text>
-                    <text x="276" y="62" fill="#1a3a6b" font-size="8" font-weight="600">Mês e</text>
-                    <text x="276" y="72" fill="#1a3a6b" font-size="8" font-weight="600">consumo</text>
-
-                    <circle cx="262" cy="157" r="9" fill="#1a3a6b"/>
-                    <text x="262" y="160" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">2</text>
-                    <text x="276" y="154" fill="#1a3a6b" font-size="8" font-weight="600">Leituras</text>
-                    <text x="276" y="164" fill="#1a3a6b" font-size="8" font-weight="600">do medidor</text>
-
-                    <circle cx="262" cy="220" r="9" fill="#f28c00"/>
-                    <text x="262" y="223" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">3</text>
-                    <text x="276" y="217" fill="#1a3a6b" font-size="8" font-weight="600">COSIP /</text>
-                    <text x="276" y="227" fill="#1a3a6b" font-size="8" font-weight="600">iluminação</text>
-                  </g>
-                </svg>
-                <figcaption class="import-guide-tips">
-                  <strong>Como tirar a foto</strong>
-                  <ul>
-                    <li>Enquadre da <em>CONTA MÊS</em> até o <em>COSIP</em> (área tracejada).</li>
-                    <li>Foto reta, com boa luz, sem sombra e sem reflexo.</li>
-                    <li>Não precisa do QR, PIX nem do código de barras.</li>
-                  </ul>
-                </figcaption>
-              </figure>
-
+              <p class="import-hint">Envie uma foto nítida ou PDF da fatura. Antes de escolher o arquivo, o sistema mostra a área ideal para fotografar.</p>
               <div class="import-actions">
-                <label class="import-btn" for="bill-file-input">
+                <button type="button" id="import-open-guide" class="import-btn">
                   <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
                     <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2.2l1.1-1.5h4.4L15.3 5H17.5A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" stroke="currentColor" stroke-width="1.7"/>
                     <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.7"/>
                   </svg>
                   <span>Foto ou arquivo</span>
-                </label>
+                </button>
                 <input id="bill-file-input" type="file" accept="image/*,application/pdf,.pdf" capture="environment" hidden>
               </div>
               <p id="import-status" class="import-status" hidden></p>
@@ -447,6 +378,65 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
           <span>Conta autenticada · alertas de vencimento por e-mail</span>
         </div>
         <div class="footer-brand">Âmbar ENERGIA</div>
+      </footer>
+    </div>
+  </div>
+
+  <div id="import-guide-modal" class="import-modal" hidden>
+    <div class="import-modal-backdrop" data-import-guide-close></div>
+    <div class="import-modal-card" role="dialog" aria-modal="true" aria-labelledby="import-guide-heading">
+      <header class="import-modal-head">
+        <h3 id="import-guide-heading">Como fotografar a fatura</h3>
+        <button type="button" class="import-modal-x" data-import-guide-close aria-label="Fechar">×</button>
+      </header>
+      <div class="import-modal-body">
+        <p class="import-modal-lead">Enquadre só a área tracejada: da <strong>CONTA MÊS</strong> até o <strong>COSIP</strong>.</p>
+        <svg class="import-guide-svg" viewBox="0 0 320 290" role="img" aria-label="Área da fatura para fotografar">
+          <rect x="36" y="10" width="200" height="270" fill="#fff" stroke="#1a3a6b" stroke-width="1.5"/>
+          <rect x="36" y="10" width="200" height="28" fill="#e8edf3" opacity="0.9"/>
+          <text x="136" y="28" text-anchor="middle" fill="#8a97a8" font-size="8" font-family="IBM Plex Sans, sans-serif">cabeçalho / QR (não precisa)</text>
+          <rect x="42" y="44" width="188" height="42" fill="rgba(242,140,0,0.12)" stroke="#f28c00" stroke-width="1.8"/>
+          <rect x="42" y="44" width="188" height="14" fill="#f28c00"/>
+          <text x="136" y="54" text-anchor="middle" fill="#fff" font-size="7" font-weight="700" font-family="IBM Plex Sans, sans-serif">CONTA MÊS · VENCIMENTO · CONSUMO · TOTAL</text>
+          <text x="52" y="72" fill="#1a3a6b" font-size="8" font-family="IBM Plex Mono, monospace">OUT/2026   05/11   333   321,61</text>
+          <rect x="42" y="92" width="188" height="28" fill="#f4f6f9"/>
+          <text x="136" y="110" text-anchor="middle" fill="#9aa5b4" font-size="7" font-family="IBM Plex Sans, sans-serif">dados do cliente / unidade</text>
+          <rect x="42" y="128" width="188" height="58" fill="rgba(26,58,107,0.08)" stroke="#1a3a6b" stroke-width="1.8"/>
+          <rect x="42" y="128" width="188" height="14" fill="#1a3a6b"/>
+          <text x="136" y="138" text-anchor="middle" fill="#fff" font-size="7" font-weight="700" font-family="IBM Plex Sans, sans-serif">DADOS DA LEITURA (KWH)</text>
+          <text x="52" y="156" fill="#1a3a6b" font-size="7.5" font-family="IBM Plex Mono, monospace">En Ativa  Atual  Anterior</text>
+          <text x="52" y="172" fill="#1a3a6b" font-size="9" font-weight="700" font-family="IBM Plex Mono, monospace">          14978   14645</text>
+          <rect x="42" y="196" width="188" height="48" fill="rgba(242,140,0,0.10)" stroke="#f28c00" stroke-width="1.8"/>
+          <rect x="42" y="196" width="188" height="14" fill="#2c4a6e"/>
+          <text x="136" y="206" text-anchor="middle" fill="#fff" font-size="7" font-weight="700" font-family="IBM Plex Sans, sans-serif">DESCRIÇÃO DA CONTA</text>
+          <text x="52" y="222" fill="#1a3a6b" font-size="7.5" font-family="IBM Plex Mono, monospace">CONSUMO … A R$ 0,875710</text>
+          <text x="52" y="236" fill="#1a3a6b" font-size="7.5" font-family="IBM Plex Mono, monospace">COSIP / Iluminação pública</text>
+          <rect x="36" y="252" width="200" height="28" fill="#e8edf3" opacity="0.9"/>
+          <text x="136" y="270" text-anchor="middle" fill="#8a97a8" font-size="8" font-family="IBM Plex Sans, sans-serif">PIX / código de barras (não precisa)</text>
+          <rect x="38" y="40" width="196" height="208" fill="none" stroke="#f28c00" stroke-width="2.4" stroke-dasharray="6 4"/>
+          <g font-family="IBM Plex Sans, sans-serif">
+            <circle cx="262" cy="65" r="9" fill="#f28c00"/>
+            <text x="262" y="68" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">1</text>
+            <text x="276" y="62" fill="#1a3a6b" font-size="8" font-weight="600">Mês e</text>
+            <text x="276" y="72" fill="#1a3a6b" font-size="8" font-weight="600">consumo</text>
+            <circle cx="262" cy="157" r="9" fill="#1a3a6b"/>
+            <text x="262" y="160" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">2</text>
+            <text x="276" y="154" fill="#1a3a6b" font-size="8" font-weight="600">Leituras</text>
+            <text x="276" y="164" fill="#1a3a6b" font-size="8" font-weight="600">do medidor</text>
+            <circle cx="262" cy="220" r="9" fill="#f28c00"/>
+            <text x="262" y="223" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">3</text>
+            <text x="276" y="217" fill="#1a3a6b" font-size="8" font-weight="600">COSIP /</text>
+            <text x="276" y="227" fill="#1a3a6b" font-size="8" font-weight="600">iluminação</text>
+          </g>
+        </svg>
+        <ul class="import-guide-tips-list">
+          <li>Foto reta, com boa luz, sem sombra e sem reflexo.</li>
+          <li>Não precisa do QR, PIX nem do código de barras.</li>
+        </ul>
+      </div>
+      <footer class="import-modal-actions">
+        <button type="button" class="import-modal-secondary" data-import-guide-close>Fechar</button>
+        <button type="button" id="import-guide-continue" class="import-modal-primary">Entendi, escolher foto</button>
       </footer>
     </div>
   </div>
