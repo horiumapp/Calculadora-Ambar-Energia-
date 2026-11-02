@@ -862,6 +862,37 @@ export function initCalculator(userId) {
   });
 
   const fileInput = $("bill-file-input");
+  const guideModal = $("import-guide-modal");
+  const openGuideBtn = $("import-open-guide");
+  const continueGuideBtn = $("import-guide-continue");
+
+  function openImportGuide() {
+    if (!guideModal) return;
+    guideModal.hidden = false;
+    document.body.style.overflow = "hidden";
+    continueGuideBtn?.focus();
+  }
+
+  function closeImportGuide() {
+    if (!guideModal) return;
+    guideModal.hidden = true;
+    document.body.style.overflow = "";
+  }
+
+  openGuideBtn?.addEventListener("click", () => openImportGuide());
+  continueGuideBtn?.addEventListener("click", () => {
+    closeImportGuide();
+    fileInput?.click();
+  });
+  guideModal?.querySelectorAll("[data-import-guide-close]").forEach((el) => {
+    el.addEventListener("click", () => closeImportGuide());
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && guideModal && !guideModal.hidden) {
+      closeImportGuide();
+    }
+  });
+
   if (fileInput) {
     fileInput.addEventListener("change", async () => {
       const file = fileInput.files?.[0];
