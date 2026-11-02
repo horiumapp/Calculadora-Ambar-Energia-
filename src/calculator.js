@@ -179,16 +179,32 @@ function setImportStatus(message, kind = "") {
   el.className = `import-status${kind ? ` is-${kind}` : ""}`;
 }
 
+function trustedValue(parsed, key) {
+  if (parsed?.[key] == null) return null;
+  if (parsed.trust && parsed.trust[key] === false) return null;
+  return parsed[key];
+}
+
 function renderImportFields(parsed) {
   const list = $("import-fields");
   if (!list) return;
+  const mark = (key, value) => {
+    if (value == null || value === "") return "—";
+    const ok = !parsed.trust || parsed.trust[key] !== false;
+    return ok ? String(value) : `${value} (revisar)`;
+  };
   const rows = [
-    ["Mês", parsed.monthKey || "—"],
-    ["Leitura anterior", parsed.previous != null ? String(parsed.previous) : "—"],
-    ["Leitura atual", parsed.current != null ? String(parsed.current) : "—"],
-    ["Constante", parsed.factor != null ? String(parsed.factor) : "—"],
-    ["Tarifa", parsed.rate != null ? String(parsed.rate) : "—"],
-    ["COSIP", parsed.extras != null ? String(parsed.extras) : "—"],
+    ["Mês", mark("monthKey", parsed.monthKey)],
+    ["Leitura anterior", mark("previous", parsed.previous)],
+    ["Leitura atual", mark("current", parsed.current)],
+    ["Constante", mark("factor", parsed.factor)],
+    [
+      "Tarifa",
+      parsed.rate != null
+        ? `${parsed.rate}${parsed.rateEstimated || parsed.trust?.rate === false ? " (revisar)" : ""}`
+        : "—",
+    ],
+    ["COSIP", mark("extras", parsed.extras)],
   ];
   list.hidden = false;
   list.innerHTML = rows
@@ -197,13 +213,9 @@ function renderImportFields(parsed) {
 
   const preview = $("import-ocr-preview");
   if (preview) {
-    if (parsed.rawPreview) {
-      preview.hidden = false;
-      preview.textContent = parsed.rawPreview;
-    } else {
-      preview.hidden = true;
-      preview.textContent = "";
-    }
+    // Preview só sob demanda visual: evita poluir e confundir com texto OCR sujo.
+    preview.hidden = true;
+    preview.textContent = "";
   }
 }
 
@@ -211,17 +223,26 @@ function applyImportedBill(parsed) {
   // Sempre parte do zero para não misturar lixo de tentativas anteriores.
   clearFormFields({ keepMonth: false });
 
-  if (parsed.monthKey) {
-    $("bill-month-input").value = parsed.monthKey;
-    selectedMonthKey = parsed.monthKey;
+  const monthKey = trustedValue(parsed, "monthKey");
+  const previous = trustedValue(parsed, "previous");
+  const current = trustedValue(parsed, "current");
+  const factor = trustedValue(parsed, "factor");
+  const rate = trustedValue(parsed, "rate");
+  const extras = trustedValue(parsed, "extras");
+
+  if (monthKey) {
+    $("bill-month-input").value = monthKey;
+    selectedMonthKey = monthKey;
   }
 
   writeFormDraft({
-    previous: parsed.previous != null ? String(parsed.previous) : "",
-    current: parsed.current != null ? String(parsed.current) : "",
-    factor: parsed.factor != null ? String(parsed.factor) : (parsed.previous != null || parsed.current != null ? "1" : ""),
-    rate: parsed.rate != null ? String(parsed.rate) : "",
-    extras: parsed.extras != null ? String(parsed.extras) : "",
+    previous: previous != null ? String(previous) : "",
+    current: current != null ? String(current) : "",
+    factor: factor != null
+      ? String(factor)
+      : (previous != null || current != null ? "1" : ""),
+    rate: rate != null ? String(rate) : "",
+    extras: extras != null ? String(extras) : "",
   });
 
   if (selectedMonthKey) snapshotMonthDraft(selectedMonthKey);
@@ -822,14 +843,14 @@ export function initCalculator(userId) {
         const parsed = await importBillFromFile(file, (status) => setImportStatus(status));
         applyImportedBill(parsed);
         const missing = [];
-        if (parsed.monthKey == null) missing.push("mês");
-        if (parsed.previous == null) missing.push("leitura anterior");
-        if (parsed.current == null) missing.push("leitura atual");
-        if (parsed.rate == null) missing.push("tarifa");
-        if (parsed.extras == null) missing.push("COSIP");
+        if (trustedValue(parsed, "monthKey") == null) missing.push("mês");
+        if (trustedValue(parsed, "previous") == null) missing.push("leitura anterior");
+        if (trustedValue(parsed, "current") == null) missing.push("leitura atual");
+        if (trustedValue(parsed, "rate") == null) missing.push("tarifa");
+        if (trustedValue(parsed, "extras") == null) missing.push("COSIP");
         if (missing.length) {
           setImportStatus(
-            `Li a fatura com cuidado e só preenchi o que parecia confiável. Revise/complete: ${missing.join(", ")}.`,
+            `Só preenchi o que estava seguro. Complete/revise: ${missing.join(", ")}.`,
             "ok",
           );
         } else {

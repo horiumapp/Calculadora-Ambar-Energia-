@@ -124,33 +124,71 @@ function cloneProcessedCanvas(sourceCanvas, { hardBin = false } = {}) {
   return canvas;
 }
 
-function scoreParsed(parsed) {
-  return ["monthKey", "previous", "current", "rate", "extras", "factor"]
-    .filter((key) => parsed?.[key] != null).length;
+function cropCanvasRegion(sourceCanvas, y0, y1) {
+  const top = Math.max(0, Math.floor(sourceCanvas.height * y0));
+  const bottom = Math.min(sourceCanvas.height, Math.ceil(sourceCanvas.height * y1));
+  const height = Math.max(1, bottom - top);
+  const canvas = document.createElement("canvas");
+  canvas.width = sourceCanvas.width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    top,
+    sourceCanvas.width,
+    height,
+    0,
+    0,
+    sourceCanvas.width,
+    height,
+  );
+  return canvas;
+}
+
+async function recognizeCanvas(worker, sourceCanvas, { hardBin = false, psm = PSM.AUTO } = {}) {
+  const canvas = cloneProcessedCanvas(sourceCanvas, { hardBin });
+  await worker.setParameters({
+    tessedit_pageseg_mode: psm,
+    preserve_interword_spaces: "1",
+    user_defined_dpi: "300",
+  });
+  const result = await worker.recognize(canvas);
+  return String(result?.data?.text || "").trim();
 }
 
 async function recognizePasses(baseCanvas, worker, onProgress) {
-  const passes = [
-    { label: "passagem 1/2", hardBin: false, psm: PSM.AUTO },
-    { label: "passagem 2/2", hardBin: true, psm: PSM.SPARSE_TEXT },
+  // Regiões típicas da fatura Amazonas: cabeçalho (mês/total/consumo),
+  // meio (leituras) e rodapé (COSIP / A R$).
+  const regions = [
+    { label: "página inteira", y0: 0, y1: 1, hardBin: false, psm: PSM.AUTO },
+    { label: "cabeçalho", y0: 0, y1: 0.42, hardBin: false, psm: PSM.SPARSE_TEXT },
+    { label: "medições", y0: 0.22, y1: 0.72, hardBin: true, psm: PSM.SPARSE_TEXT },
+    { label: "valores", y0: 0.48, y1: 1, hardBin: false, psm: PSM.AUTO },
   ];
-  const parsedList = [];
 
-  for (const pass of passes) {
-    onProgress?.(pass.label);
-    const canvas = cloneProcessedCanvas(baseCanvas, { hardBin: pass.hardBin });
-    await worker.setParameters({
-      tessedit_pageseg_mode: pass.psm,
-      preserve_interword_spaces: "1",
-      user_defined_dpi: "300",
+  const texts = [];
+  const parsedList = [];
+  const total = regions.length;
+
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i];
+    onProgress?.(`Lendo ${region.label}… ${i + 1}/${total}`);
+    const source = region.y0 === 0 && region.y1 === 1
+      ? baseCanvas
+      : cropCanvasRegion(baseCanvas, region.y0, region.y1);
+    const text = await recognizeCanvas(worker, source, {
+      hardBin: region.hardBin,
+      psm: region.psm,
     });
-    const result = await worker.recognize(canvas);
-    const text = result?.data?.text || "";
-    if (!text.trim()) continue;
+    if (!text) continue;
+    texts.push(text);
     parsedList.push(parseBillText(text));
   }
 
-  return parsedList;
+  return { texts, parsedList };
 }
 
 /**
@@ -165,24 +203,29 @@ export async function importBillFromFile(file, onProgress) {
     const baseCanvas = await fileToBaseCanvas(file, onProgress);
     onProgress?.("Iniciando OCR…");
     const worker = await getWorker(onProgress);
-    const parsedList = await recognizePasses(baseCanvas, worker, onProgress);
+    const { texts, parsedList } = await recognizePasses(baseCanvas, worker, onProgress);
     if (!parsedList.length) {
       throw new Error("Não foi possível ler texto na fatura. Tente uma foto mais nítida ou um PDF.");
     }
 
-    const parsed = mergeParsedResults(parsedList);
-    parsed.confidence = scoreParsed(parsed) / 6;
-    parsed.rawPreview = parsedList
-      .map((item) => item.rawPreview)
-      .filter(Boolean)
-      .join("\n---\n")
-      .slice(0, 800);
+    const combinedText = texts.join("\n");
+    const parsed = mergeParsedResults(parsedList, combinedText);
+    parsed.rawPreview = combinedText.slice(0, 800);
 
-    const coreFound = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate]
+    const trustedCore = [
+      parsed.trust?.monthKey && parsed.monthKey,
+      parsed.trust?.previous && parsed.previous,
+      parsed.trust?.current && parsed.current,
+      parsed.trust?.rate && parsed.rate,
+    ].filter(Boolean).length;
+
+    // Aceita também 2 campos brutos se trust ainda estiver fraco (foto ruim).
+    const rawCore = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate]
       .filter((v) => v != null).length;
-    if (coreFound < 2) {
+
+    if (trustedCore < 1 && rawCore < 2) {
       const err = new Error(
-        "A imagem foi lida, mas não deu para identificar os dados com segurança. Veja o texto reconhecido e preencha manualmente o que faltar.",
+        "A imagem foi lida, mas não deu para identificar os dados com segurança. Tente foto reta e nítida, ou PDF.",
       );
       err.parsed = parsed;
       throw err;

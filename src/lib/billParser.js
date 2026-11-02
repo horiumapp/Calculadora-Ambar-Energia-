@@ -142,88 +142,186 @@ function extractMonthKey(text) {
   return null;
 }
 
-function extractReadings(text) {
+function collectMeterCandidates(text) {
   const normalized = normalizeText(text);
+  const seen = new Set();
+  const out = [];
+  for (const match of normalized.matchAll(/\b(\d{4,6})\b/g)) {
+    const num = parseBrNumber(match[1]);
+    if (num == null || looksLikeYear(num) || num < 1000) continue;
+    // Evita medidor/UC típicos se aparecerem isolados demais; ainda entram no pareamento.
+    if (seen.has(num)) continue;
+    seen.add(num);
+    out.push(num);
+  }
+  return out;
+}
+
+function pickReadingPair(candidates, consumptionHint) {
+  if (!candidates.length) return null;
+  const pairs = [];
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = 0; j < candidates.length; j++) {
+      if (i === j) continue;
+      const current = candidates[i];
+      const previous = candidates[j];
+      if (current <= previous) continue;
+      const delta = current - previous;
+      if (delta < 30 || delta > 8000) continue;
+      let score = 0;
+      // Números próximos na lista (mesma linha OCR) valem mais.
+      score -= Math.abs(i - j) * 15;
+      // Prefere leituras com 5 dígitos (comum em medidores AM).
+      score += String(current).length >= 5 ? 20 : 0;
+      score += String(previous).length >= 5 ? 20 : 0;
+      if (consumptionHint != null) {
+        const err = Math.abs(delta - consumptionHint);
+        score -= err;
+        if (err <= 3) score += 500;
+        else if (err <= 10) score += 120;
+      } else if (delta >= 80 && delta <= 900) {
+        score += 40; // faixa residencial comum
+      }
+      pairs.push({ previous, current, delta, score });
+    }
+  }
+  if (!pairs.length) return null;
+  pairs.sort((a, b) => b.score - a.score);
+  return pairs[0];
+}
+
+function extractReadings(text, consumptionHint = null) {
+  const normalized = normalizeText(text);
+  let previous = null;
+  let current = null;
+  let source = null;
 
   // Linha Amazonas (mesmo com OCR ruído): En Ativa Total 14978 14645 ...
   const compact = normalized.match(
     /en\s*[a-z]{0,12}\s*total[^\d]{0,30}(\d{4,6})\s+(\d{4,6})/i,
   );
   if (compact) {
-    const current = parseBrNumber(compact[1]);
-    const previous = parseBrNumber(compact[2]);
+    current = parseBrNumber(compact[1]);
+    previous = parseBrNumber(compact[2]);
     if (
       current != null && previous != null
       && !looksLikeYear(current) && !looksLikeYear(previous)
       && current >= previous
     ) {
-      return { previous, current };
+      source = "ativa-total";
+    } else {
+      previous = null;
+      current = null;
     }
   }
 
   // Multilinha (SPARSE OCR): En Ativa Total \n 14978 \n 14645
-  const multi = normalized.match(
-    /en\s*[a-z]{0,12}\s*total\D{0,40}?(\d{4,6})\D{0,20}?(\d{4,6})/i,
-  );
-  if (multi) {
-    const current = parseBrNumber(multi[1]);
-    const previous = parseBrNumber(multi[2]);
-    if (
-      current != null && previous != null
-      && !looksLikeYear(current) && !looksLikeYear(previous)
-      && current >= previous
-      && String(current).length >= 4
-      && String(previous).length >= 4
-    ) {
-      return { previous, current };
+  if (previous == null || current == null) {
+    const multi = normalized.match(
+      /en\s*[a-z]{0,12}\s*total\D{0,40}?(\d{4,6})\D{0,20}?(\d{4,6})/i,
+    );
+    if (multi) {
+      const cur = parseBrNumber(multi[1]);
+      const prev = parseBrNumber(multi[2]);
+      if (
+        cur != null && prev != null
+        && !looksLikeYear(cur) && !looksLikeYear(prev)
+        && cur >= prev
+        && String(cur).length >= 4
+        && String(prev).length >= 4
+      ) {
+        current = cur;
+        previous = prev;
+        source = "ativa-multi";
+      }
     }
   }
 
   // Cabeçalho Leit. Atual ... Leit. Anterior ... depois dois números grandes
-  const labeledPair = normalized.match(
-    /leit\.?\s*atual[\s\S]{0,80}?leit\.?\s*anterior[\s\S]{0,120}?(\d{4,6})\D+(\d{4,6})/i,
-  );
-  if (labeledPair) {
-    const current = parseBrNumber(labeledPair[1]);
-    const previous = parseBrNumber(labeledPair[2]);
-    if (
-      current != null && previous != null
-      && !looksLikeYear(current) && !looksLikeYear(previous)
-      && current >= previous
-    ) {
-      return { previous, current };
+  if (previous == null || current == null) {
+    const labeledPair = normalized.match(
+      /leit\.?\s*atual[\s\S]{0,80}?leit\.?\s*anterior[\s\S]{0,120}?(\d{4,6})\D+(\d{4,6})/i,
+    );
+    if (labeledPair) {
+      const cur = parseBrNumber(labeledPair[1]);
+      const prev = parseBrNumber(labeledPair[2]);
+      if (
+        cur != null && prev != null
+        && !looksLikeYear(cur) && !looksLikeYear(prev)
+        && cur >= prev
+      ) {
+        current = cur;
+        previous = prev;
+        source = "leit-labels";
+      }
     }
   }
 
-  const currentMatch = normalized.match(
-    /leit\.?\s*atual(?:\s*kwh)?[^\d]{0,24}(\d{4,6})(?!\s*[\/.\-]\d)/i,
-  );
-  const previousMatch = normalized.match(
-    /leit\.?\s*anterior(?:\s*kwh)?[^\d]{0,24}(\d{4,6})(?!\s*[\/.\-]\d)/i,
-  );
-
-  let current = currentMatch ? parseBrNumber(currentMatch[1]) : null;
-  let previous = previousMatch ? parseBrNumber(previousMatch[1]) : null;
-
-  if (previous == null) {
-    const m = normalized.match(
-      /leitura\s+anterior[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{4,9})(?!\s*[\/.\-]\d)/i,
+  if (previous == null || current == null) {
+    const currentMatch = normalized.match(
+      /leit\.?\s*atual(?:\s*kwh)?[^\d]{0,24}(\d{4,6})(?!\s*[\/.\-]\d)/i,
     );
-    previous = m ? parseBrNumber(m[1]) : null;
+    const previousMatch = normalized.match(
+      /leit\.?\s*anterior(?:\s*kwh)?[^\d]{0,24}(\d{4,6})(?!\s*[\/.\-]\d)/i,
+    );
+    const cur = currentMatch ? parseBrNumber(currentMatch[1]) : null;
+    const prev = previousMatch ? parseBrNumber(previousMatch[1]) : null;
+    if (cur != null) current = cur;
+    if (prev != null) previous = prev;
+    if (current != null && previous != null) source = "leit-single";
   }
-  if (current == null) {
-    const m = normalized.match(
-      /leitura\s+atual[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{4,9})(?!\s*[\/.\-]\d)/i,
-    );
-    current = m ? parseBrNumber(m[1]) : null;
+
+  const candidates = collectMeterCandidates(text);
+
+  // Pareamento por consumo: recupera OCR que cortou dígitos (14978 + 1404).
+  const pair = pickReadingPair(candidates, consumptionHint);
+  if (pair) {
+    const currentDelta = previous != null && current != null ? current - previous : null;
+    const currentMismatch = consumptionHint != null
+      && currentDelta != null
+      && Math.abs(currentDelta - consumptionHint) > Math.max(8, consumptionHint * 0.08);
+    if (previous == null || current == null || currentMismatch) {
+      // Só troca se o novo par for claramente melhor.
+      if (
+        consumptionHint == null
+        || Math.abs(pair.delta - consumptionHint) <= Math.max(8, consumptionHint * 0.08)
+        || currentMismatch
+      ) {
+        previous = pair.previous;
+        current = pair.current;
+        source = "pair-search";
+      }
+    }
+  }
+
+  // Foto ruim: só a leitura atual sai íntegra; anterior vem truncada e o par falha.
+  // Com consumo conhecido: atual - kWh.
+  if (consumptionHint != null && consumptionHint > 0) {
+    const deltaNow = previous != null && current != null ? current - previous : null;
+    const mismatch = deltaNow == null
+      || Math.abs(deltaNow - consumptionHint) > Math.max(8, consumptionHint * 0.08);
+    if (mismatch) {
+      const big = candidates
+        .filter((n) => String(n).length >= 5)
+        .sort((a, b) => b - a);
+      for (const cur of big) {
+        const prev = cur - consumptionHint;
+        if (!Number.isInteger(prev) || prev < 1000) continue;
+        if (looksLikeYear(prev) || looksLikeYear(cur)) continue;
+        previous = prev;
+        current = cur;
+        source = "current-minus-kwh";
+        break;
+      }
+    }
   }
 
   if (looksLikeYear(previous)) previous = null;
   if (looksLikeYear(current)) current = null;
   if (previous != null && current != null && current < previous) {
-    return { previous: null, current: null };
+    return { previous: null, current: null, source: null };
   }
-  return { previous, current };
+  return { previous, current, source };
 }
 
 function extractTotalHint(text) {
@@ -382,6 +480,51 @@ function extractConsumptionHint(text) {
   return null;
 }
 
+function readingsMatchConsumption(previous, current, factor, consumptionHint) {
+  if (previous == null || current == null || consumptionHint == null) return false;
+  const delta = (current - previous) * (factor || 1);
+  return Math.abs(delta - consumptionHint) <= Math.max(5, consumptionHint * 0.05);
+}
+
+function buildFieldTrust(parsed, rateEstimated = false) {
+  const trust = {
+    monthKey: parsed.monthKey != null,
+    previous: false,
+    current: false,
+    rate: false,
+    extras: parsed.extras != null,
+    factor: parsed.factor != null,
+  };
+
+  const readingsOk = parsed.previous != null && parsed.current != null
+    && parsed.current > parsed.previous
+    && String(parsed.current).length >= 4
+    && String(parsed.previous).length >= 4;
+
+  if (readingsOk) {
+    if (parsed.consumptionHint != null) {
+      const match = readingsMatchConsumption(
+        parsed.previous,
+        parsed.current,
+        parsed.factor || 1,
+        parsed.consumptionHint,
+      );
+      trust.previous = match;
+      trust.current = match;
+    } else {
+      // Sem consumo: só confia se ambos tiverem 5 dígitos (menos truncamento).
+      const solid = String(parsed.previous).length >= 5 && String(parsed.current).length >= 5;
+      trust.previous = solid;
+      trust.current = solid;
+    }
+  }
+
+  // Tarifa estimada não entra no formulário (evita confusão); só a lida no texto.
+  trust.rate = parsed.rate != null && !rateEstimated;
+
+  return trust;
+}
+
 /**
  * Extrai campos úteis de texto OCR de fatura de energia (BR / Amazonas Energia).
  */
@@ -389,15 +532,19 @@ export function parseBillText(ocrText) {
   const text = String(ocrText || "");
   const consumptionHint = extractConsumptionHint(text);
   const totalHint = extractTotalHint(text);
+  const readings = extractReadings(text, consumptionHint);
   const raw = {
     monthKey: extractMonthKey(text),
-    ...extractReadings(text),
+    previous: readings.previous,
+    current: readings.current,
     rate: extractRate(text),
     extras: extractExtras(text),
     factor: extractFactor(text),
     consumptionHint,
     totalHint,
   };
+
+  let rateEstimated = false;
 
   // Se a leitura atual e o consumo batem, recalcula a anterior (OCR costuma errar 1 dígito).
   if (
@@ -414,7 +561,7 @@ export function parseBillText(ocrText) {
     }
   }
 
-  // Fallback de tarifa: (total - COSIP) / consumo
+  // Fallback de tarifa: (total - COSIP) / consumo — marcado como estimado.
   if (
     raw.rate == null
     && raw.consumptionHint
@@ -425,17 +572,24 @@ export function parseBillText(ocrText) {
     const estimated = (raw.totalHint - raw.extras) / raw.consumptionHint;
     if (estimated > 0.05 && estimated < 5) {
       raw.rate = Number(estimated.toFixed(6));
+      rateEstimated = true;
     }
   }
 
   const parsed = sanitizeParsed(raw);
-  const core = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate];
-  const found = core.filter((v) => v != null).length;
+  parsed.consumptionHint = raw.consumptionHint;
+  parsed.totalHint = raw.totalHint;
+  const trust = buildFieldTrust(parsed, rateEstimated);
+  const core = [trust.monthKey, trust.previous, trust.current, trust.rate];
+  const found = core.filter(Boolean).length;
   const confidence = found / core.length;
 
   return {
     ...parsed,
     consumptionHint: raw.consumptionHint,
+    totalHint: raw.totalHint,
+    rateEstimated,
+    trust,
     confidence,
     warnings: [],
     rawPreview: text.slice(0, 600),
@@ -455,33 +609,47 @@ function readingError(item, consumptionHint) {
 }
 
 /** Mescla vários resultados OCR, preferindo campos preenchidos e leituras coerentes. */
-export function mergeParsedResults(results) {
+export function mergeParsedResults(results, combinedText = "") {
   const list = (results || []).filter(Boolean);
   const consumptionHint = list.map((item) => item.consumptionHint).find((v) => v != null) ?? null;
   const totalHint = list.map((item) => item.totalHint).find((v) => v != null) ?? null;
 
-  const readingCandidate = [...list]
-    .filter((item) => item.previous != null && item.current != null)
+  // Reparse do texto concatenado: junta cabeçalho + medições de regiões diferentes.
+  const fromCombined = combinedText
+    ? parseBillText(combinedText)
+    : null;
+
+  const readingCandidate = [...list, fromCombined]
+    .filter((item) => item?.previous != null && item?.current != null)
     .sort((a, b) => readingError(a, consumptionHint) - readingError(b, consumptionHint))[0] || null;
 
+  let rateEstimated = false;
   const merged = {
-    monthKey: null,
+    monthKey: fromCombined?.monthKey ?? null,
     previous: readingCandidate?.previous ?? null,
     current: readingCandidate?.current ?? null,
     factor: readingCandidate?.factor ?? null,
     rate: null,
     extras: null,
-    rawPreview: "",
-    consumptionHint,
-    totalHint,
+    rawPreview: combinedText.slice(0, 600) || "",
+    consumptionHint: fromCombined?.consumptionHint ?? consumptionHint,
+    totalHint: fromCombined?.totalHint ?? totalHint,
   };
 
   for (const item of list) {
     if (merged.monthKey == null && item.monthKey != null) merged.monthKey = item.monthKey;
-    if (merged.rate == null && item.rate != null) merged.rate = item.rate;
     if (merged.extras == null && item.extras != null) merged.extras = item.extras;
     if (merged.factor == null && item.factor != null) merged.factor = item.factor;
     if (!merged.rawPreview && item.rawPreview) merged.rawPreview = item.rawPreview;
+  }
+
+  // Preferir tarifa lida no OCR (não estimada).
+  for (const item of [fromCombined, ...list]) {
+    if (!item?.rate) continue;
+    if (item.rateEstimated) continue;
+    merged.rate = item.rate;
+    rateEstimated = false;
+    break;
   }
 
   if (
@@ -494,6 +662,23 @@ export function mergeParsedResults(results) {
     const estimated = (merged.totalHint - merged.extras) / merged.consumptionHint;
     if (estimated > 0.05 && estimated < 5) {
       merged.rate = Number(estimated.toFixed(6));
+      rateEstimated = true;
+    }
+  }
+
+  // Recalcula anterior se consumo e atual forem confiáveis.
+  if (
+    merged.current != null
+    && merged.consumptionHint != null
+    && merged.consumptionHint > 0
+  ) {
+    const factor = merged.factor || 1;
+    const expectedPrevious = merged.current - (merged.consumptionHint / factor);
+    if (Number.isInteger(expectedPrevious) && expectedPrevious >= 0) {
+      const mismatch = merged.previous == null
+        || Math.abs((merged.current - merged.previous) * factor - merged.consumptionHint)
+          > Math.max(5, merged.consumptionHint * 0.05);
+      if (mismatch) merged.previous = expectedPrevious;
     }
   }
 
@@ -503,7 +688,16 @@ export function mergeParsedResults(results) {
     warnings: [],
     rawPreview: merged.rawPreview,
   });
-  sanitized.consumptionHint = consumptionHint;
-  sanitized.totalHint = totalHint;
+  sanitized.consumptionHint = merged.consumptionHint;
+  sanitized.totalHint = merged.totalHint;
+  sanitized.rateEstimated = rateEstimated;
+  sanitized.trust = buildFieldTrust(sanitized, rateEstimated);
+  const core = [
+    sanitized.trust.monthKey,
+    sanitized.trust.previous,
+    sanitized.trust.current,
+    sanitized.trust.rate,
+  ];
+  sanitized.confidence = core.filter(Boolean).length / core.length;
   return sanitized;
 }
