@@ -2,8 +2,12 @@ node_modules
 dist
 .env
 .env.local
+.env.*.local
 .twilio.secrets
 .resend.secrets
 .DS_Store
 supabase/.temp
+security-pentest-results.json
+*.pem
+*.p12
 

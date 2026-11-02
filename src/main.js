@@ -145,7 +145,6 @@ function wireAuth() {
         });
         if (error) throw error;
         if (data.session) {
-          if (fullName) await saveProfile(data.user.id, { fullName, phone: "" }).catch(() => {});
           await enterApp(data.session);
         } else {
           authError.textContent = "Conta criada. Confirme o e-mail (se exigido) e faça login.";
