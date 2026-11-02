@@ -36,6 +36,7 @@ assert.equal(m.current, 14978);
 assert.equal(m.previous, 14645, "deve recalcular anterior com consumo 333");
 assert.equal(m.trust.previous, true);
 assert.equal(m.trust.current, true);
-assert.equal(m.trust.rate, false, "tarifa estimada nao deve ir pro form");
+assert.equal(m.rate, 0.87571, "tarifa Amazonas fixa");
+assert.equal(m.factor, 1, "constante Amazonas fixa");
 
 console.log("OK whatsapp-like OCR recovery");

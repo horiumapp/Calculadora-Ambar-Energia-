@@ -24,7 +24,8 @@ function preprocessJpeg(buf, { scaleFactor = 2.4, hardBin = false } = {}) {
       let r = raw.data[si];
       let g = raw.data[si + 1];
       let b = raw.data[si + 2];
-      if (r > 170 && g > 70 && g < 210 && b < 140) r = g = b = 255;
+      // Escurece laranja (texto branco nas barras da fatura).
+      if (r > 160 && g > 60 && g < 220 && b < 150 && r > b + 40) r = g = b = 18;
       let gray = r * 0.299 + g * 0.587 + b * 0.114;
       gray = Math.max(0, Math.min(255, (gray - 35) * (255 / 185)));
       const v = hardBin ? (gray < 155 ? 0 : 255) : gray;

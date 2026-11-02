@@ -49,21 +49,49 @@ async function getWorker(onProgress) {
   return workerPromise;
 }
 
-function neutralizeOrangeAndContrast(imageData, { hardBin = false } = {}) {
-  const data = imageData.data;
+/** Pré-processa a fatura Amazonas: inverte barras laranja e engrossa dígitos finos. */
+function processImageData(imageData, { hardBin = false, thicken = 0 } = {}) {
+  const { data, width, height } = imageData;
   for (let i = 0; i < data.length; i += 4) {
     let r = data[i];
     let g = data[i + 1];
     let b = data[i + 2];
-    if (r > 170 && g > 70 && g < 210 && b < 140) {
-      r = g = b = 255;
+    const isOrange = r > 160 && g > 60 && g < 220 && b < 150 && r > b + 40;
+    if (isOrange) {
+      // Texto branco na barra → preto; fundo laranja → branco.
+      const lum = r * 0.299 + g * 0.587 + b * 0.114;
+      const v = lum > 190 ? 0 : 255;
+      data[i] = data[i + 1] = data[i + 2] = v;
+      continue;
     }
     let gray = r * 0.299 + g * 0.587 + b * 0.114;
-    gray = Math.max(0, Math.min(255, (gray - 35) * (255 / 185)));
-    const v = hardBin ? (gray < 155 ? 0 : 255) : gray;
-    data[i] = v;
-    data[i + 1] = v;
-    data[i + 2] = v;
+    gray = Math.max(0, Math.min(255, (gray - 35) * (255 / 175)));
+    const v = hardBin ? (gray < 148 ? 0 : 255) : gray;
+    data[i] = data[i + 1] = data[i + 2] = v;
+  }
+
+  if (thicken > 0) {
+    const src = new Uint8ClampedArray(data);
+    for (let pass = 0; pass < thicken; pass++) {
+      const base = pass === 0 ? src : new Uint8ClampedArray(data);
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          let black = false;
+          for (let dy = -1; dy <= 1 && !black; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const idx = ((y + dy) * width + (x + dx)) * 4;
+              if (base[idx] < 128) {
+                black = true;
+                break;
+              }
+            }
+          }
+          const i = (y * width + x) * 4;
+          const v = black ? 0 : 255;
+          data[i] = data[i + 1] = data[i + 2] = v;
+        }
+      }
+    }
   }
   return imageData;
 }
@@ -82,7 +110,7 @@ async function fileToBaseCanvas(file, onProgress) {
     const data = new Uint8Array(await file.arrayBuffer());
     const pdf = await pdfjs.getDocument({ data }).promise;
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 2.4 });
+    const viewport = page.getViewport({ scale: 2.6 });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -94,8 +122,9 @@ async function fileToBaseCanvas(file, onProgress) {
   onProgress?.("Preparando imagem…");
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
+  // Scans boas (~1000px) sobem para ~2200; fotos grandes descem para 2400.
   const maxSide = 2400;
-  const minSide = 1600;
+  const minSide = 2000;
   const longest = Math.max(bitmap.width, bitmap.height);
   let scale = 1;
   if (longest > maxSide) scale = maxSide / longest;
@@ -112,14 +141,18 @@ async function fileToBaseCanvas(file, onProgress) {
   return canvas;
 }
 
-function cloneProcessedCanvas(sourceCanvas, { hardBin = false } = {}) {
+function cloneProcessedCanvas(sourceCanvas, { hardBin = false, thicken = 0, scale = 1 } = {}) {
   const canvas = document.createElement("canvas");
-  canvas.width = sourceCanvas.width;
-  canvas.height = sourceCanvas.height;
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(sourceCanvas, 0, 0);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  neutralizeOrangeAndContrast(image, { hardBin });
+  processImageData(image, { hardBin, thicken });
   ctx.putImageData(image, 0, 0);
   return canvas;
 }
@@ -148,8 +181,13 @@ function cropCanvasRegion(sourceCanvas, y0, y1) {
   return canvas;
 }
 
-async function recognizeCanvas(worker, sourceCanvas, { hardBin = false, psm = PSM.AUTO } = {}) {
-  const canvas = cloneProcessedCanvas(sourceCanvas, { hardBin });
+async function recognizeCanvas(worker, sourceCanvas, {
+  hardBin = false,
+  thicken = 0,
+  scale = 1,
+  psm = PSM.AUTO,
+} = {}) {
+  const canvas = cloneProcessedCanvas(sourceCanvas, { hardBin, thicken, scale });
   await worker.setParameters({
     tessedit_pageseg_mode: psm,
     preserve_interword_spaces: "1",
@@ -160,13 +198,15 @@ async function recognizeCanvas(worker, sourceCanvas, { hardBin = false, psm = PS
 }
 
 async function recognizePasses(baseCanvas, worker, onProgress) {
-  // Regiões típicas da fatura Amazonas: cabeçalho (mês/total/consumo),
-  // meio (leituras) e rodapé (COSIP / A R$).
+  // Faixas calibradas na scan Amazonas: cabeçalho (mês/consumo/total),
+  // linha En Ativa (leituras) e descrição (COSIP).
   const regions = [
-    { label: "página inteira", y0: 0, y1: 1, hardBin: false, psm: PSM.AUTO },
-    { label: "cabeçalho", y0: 0, y1: 0.42, hardBin: false, psm: PSM.SPARSE_TEXT },
-    { label: "medições", y0: 0.22, y1: 0.72, hardBin: true, psm: PSM.SPARSE_TEXT },
-    { label: "valores", y0: 0.48, y1: 1, hardBin: false, psm: PSM.AUTO },
+    { label: "página", y0: 0, y1: 1, hardBin: false, thicken: 1, scale: 1, psm: PSM.AUTO },
+    { label: "cabeçalho", y0: 0.03, y1: 0.18, hardBin: false, thicken: 0, scale: 2, psm: PSM.SINGLE_BLOCK },
+    { label: "cabeçalho nítido", y0: 0.03, y1: 0.18, hardBin: true, thicken: 1, scale: 2.2, psm: PSM.SINGLE_BLOCK },
+    { label: "leituras", y0: 0.55, y1: 0.78, hardBin: true, thicken: 2, scale: 2.2, psm: PSM.SINGLE_BLOCK },
+    { label: "leituras soft", y0: 0.55, y1: 0.78, hardBin: false, thicken: 1, scale: 2, psm: PSM.SPARSE_TEXT },
+    { label: "COSIP", y0: 0.68, y1: 0.92, hardBin: true, thicken: 1, scale: 2, psm: PSM.SINGLE_BLOCK },
   ];
 
   const texts = [];
@@ -181,6 +221,8 @@ async function recognizePasses(baseCanvas, worker, onProgress) {
       : cropCanvasRegion(baseCanvas, region.y0, region.y1);
     const text = await recognizeCanvas(worker, source, {
       hardBin: region.hardBin,
+      thicken: region.thicken,
+      scale: region.scale,
       psm: region.psm,
     });
     if (!text) continue;
@@ -212,20 +254,15 @@ export async function importBillFromFile(file, onProgress) {
     const parsed = mergeParsedResults(parsedList, combinedText);
     parsed.rawPreview = combinedText.slice(0, 800);
 
-    const trustedCore = [
-      parsed.trust?.monthKey && parsed.monthKey,
-      parsed.trust?.previous && parsed.previous,
-      parsed.trust?.current && parsed.current,
-      parsed.trust?.rate && parsed.rate,
-    ].filter(Boolean).length;
+    const hasUseful = parsed.monthKey != null
+      || parsed.previous != null
+      || parsed.current != null
+      || parsed.extras != null
+      || parsed.consumptionHint != null;
 
-    // Aceita também 2 campos brutos se trust ainda estiver fraco (foto ruim).
-    const rawCore = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate]
-      .filter((v) => v != null).length;
-
-    if (trustedCore < 1 && rawCore < 2) {
+    if (!hasUseful) {
       const err = new Error(
-        "A imagem foi lida, mas não deu para identificar os dados com segurança. Tente foto reta e nítida, ou PDF.",
+        "A imagem foi lida, mas não deu para identificar os dados com segurança. Tente a scan reta da fatura.",
       );
       err.parsed = parsed;
       throw err;

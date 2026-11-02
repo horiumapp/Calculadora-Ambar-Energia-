@@ -1,3 +1,7 @@
+/** Constantes residenciais Amazonas Energia / Âmbar (BT convencional). */
+export const AMAZONAS_DEFAULT_FACTOR = 1;
+export const AMAZONAS_DEFAULT_RATE = 0.87571;
+
 const MONTH_NAMES = {
   janeiro: 1, jan: 1,
   fevereiro: 2, fev: 2,
@@ -110,7 +114,7 @@ function extractMonthKey(text) {
 
   const candidates = [
     ...normalized.matchAll(
-      /(?:conta\s*mes|referencia|mes\s*\/?\s*ano|periodo)?[^\n]{0,40}?([a-z]{3,12})\s*[\/\-]\s*(\d{4}|\d{2})/gi,
+      /(?:conta\s*mes|referencia|mes\s*\/?\s*ano|periodo)?[^\n]{0,40}?([a-z]{3,12})\s*[\/\-,\[\|\s]+\s*(20\d{2}|\d{2})(?!\d)/gi,
     ),
   ];
 
@@ -119,23 +123,29 @@ function extractMonthKey(text) {
     if (!month) continue;
     let year = Number(match[2]);
     if (year < 100) year += 2000;
-    // OCR às vezes troca 2026→2028/2025; se mês ok e ano perto, corrige para ano atual/próximo.
-    if (!isPlausibleBillYear(year)) {
-      const now = currentYear();
-      if (Math.abs(year - now) <= 3) year = now;
-      else continue;
-    }
+    // OCR troca muito o ano (2020/2028); com mês claro usa o ano corrente.
+    if (!isPlausibleBillYear(year)) year = currentYear();
     const key = toMonthKey(year, month);
     if (key) return key;
   }
 
-  // Só o nome do mês (ex.: linha "QUTUBRO/2026" quebrada).
-  const loose = normalized.match(/\b([a-z]{5,12})\s*[\/\-]\s*(20\d{2})\b/i);
+  // OCR sujo: "OUTUBRO, [2026" / "QUTUBRO/2020" / "OUTUBRO/[2026"
+  const loose = normalized.match(/\b([a-z]{5,12})\s*[\/\-,\[\s|]+(20\d{2})\b/i);
   if (loose) {
     const month = resolveMonthName(loose[1]);
     let year = Number(loose[2]);
-    if (!isPlausibleBillYear(year) && Math.abs(year - currentYear()) <= 3) year = currentYear();
+    if (!isPlausibleBillYear(year)) year = currentYear();
     const key = toMonthKey(year, month);
+    if (key) return key;
+  }
+
+  // Só o nome do mês (sem ano legível): assume ano atual.
+  const monthOnly = normalized.match(
+    /\b(q?u?tubro|outubro|outubr[oa]|novembro|dezembro|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro)\b/i,
+  );
+  if (monthOnly) {
+    const month = resolveMonthName(monthOnly[1]);
+    const key = toMonthKey(currentYear(), month);
     if (key) return key;
   }
 
@@ -212,6 +222,20 @@ function extractReadings(text, consumptionHint = null) {
     } else {
       previous = null;
       current = null;
+    }
+  }
+
+  // OCR parcial: "EnAtivaTotal — 14978" (só a atual sai limpa).
+  if (current == null) {
+    const onlyCurrent = normalized.match(
+      /en\s*[a-z]{0,12}\s*total[^\d]{0,40}(\d{5,6})\b/i,
+    );
+    if (onlyCurrent) {
+      const cur = parseBrNumber(onlyCurrent[1]);
+      if (cur != null && !looksLikeYear(cur)) {
+        current = cur;
+        source = "ativa-current-only";
+      }
     }
   }
 
@@ -324,19 +348,55 @@ function extractReadings(text, consumptionHint = null) {
   return { previous, current, source };
 }
 
+function parseBrokenMoney(intPart, centPart) {
+  const money = parseBrNumber(`${intPart},${centPart}`);
+  if (money == null || money < 30 || money >= 100000) return null;
+  return money;
+}
+
+function extractHeaderConsumoTotal(text) {
+  const normalized = normalizeText(text);
+  // Linha típica OCR: OUTUBRO/2026  05/11/2026  333  321,61
+  // ou com vírgula perdida: 333  321 61
+  const withDate = normalized.match(
+    /\b\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{2,4}\s+(\d{2,4})\s+(\d{2,4})[.,\s]+(\d{2})\b/,
+  );
+  if (withDate) {
+    const kwh = parseBrNumber(withDate[1]);
+    const money = parseBrokenMoney(withDate[2], withDate[3]);
+    if (kwh != null && kwh >= 30 && kwh <= 8000 && money != null) {
+      return { consumption: kwh, total: money };
+    }
+  }
+
+  const spaced = normalized.match(/\b(\d{2,4})\s+(\d{2,4})\s+(\d{2})\b/);
+  if (spaced) {
+    const kwh = parseBrNumber(spaced[1]);
+    const money = parseBrokenMoney(spaced[2], spaced[3]);
+    if (kwh != null && kwh >= 50 && kwh <= 5000 && money != null) {
+      return { consumption: kwh, total: money };
+    }
+  }
+
+  const pair = normalized.match(/\b(\d{2,4})\s+(\d{2,4}[.,]\d{2})(?!\d)/);
+  if (pair) {
+    const kwh = parseBrNumber(pair[1]);
+    const money = parseBrNumber(pair[2]);
+    if (kwh != null && money != null && kwh >= 50 && kwh <= 5000 && money >= 30) {
+      return { consumption: kwh, total: money };
+    }
+  }
+
+  return { consumption: null, total: null };
+}
+
 function extractTotalHint(text) {
   const normalized = normalizeText(text);
   const labeled = normalized.match(
     /total\s*a\s*pagar[^\d]{0,20}(\d{1,5}[.,]\d{2})/i,
   );
   if (labeled) return parseBrNumber(labeled[1]);
-  // Cabeçalho OCR: consumo + total (333 321,61)
-  const pair = normalized.match(/\b(\d{2,4})\s+(\d{2,4}[.,]\d{2})(?!\d)/);
-  if (pair) {
-    const money = parseBrNumber(pair[2]);
-    if (money != null && money >= 30 && money < 100000) return money;
-  }
-  return null;
+  return extractHeaderConsumoTotal(text).total;
 }
 
 function extractRate(text) {
@@ -376,6 +436,18 @@ function extractRate(text) {
   return null;
 }
 
+function extractEnergyCharge(text) {
+  const normalized = normalizeText(text);
+  // "A R$ 0,875710 = 291,61" ou "333 A R$ ... = 291 61"
+  const eq = normalized.match(
+    /a\s*r\$\s*\d+[.,]\d{3,6}\s*=\s*(\d{2,5})[.,\s]+(\d{2})\b/i,
+  );
+  if (eq) return parseBrokenMoney(eq[1], eq[2]);
+  const plain = normalized.match(/a\s*r\$[^=]{0,40}=\s*(\d{2,5}[.,]\d{2})\b/i);
+  if (plain) return parseBrNumber(plain[1]);
+  return null;
+}
+
 function extractExtras(text) {
   const normalized = normalizeText(text);
   const cosip = normalized.match(
@@ -384,6 +456,14 @@ function extractExtras(text) {
   if (cosip) {
     const value = parseBrNumber(cosip[1]);
     if (value != null && value >= 0 && value <= 5000) return value;
+  }
+  // OCR quebrado: "COSIP" em uma linha e "30,00" / "30 00" perto.
+  const nearby = normalized.match(
+    /\bcosip\b[\s\S]{0,60}?(\d{1,3})[.,\s]+(\d{2})\b/i,
+  );
+  if (nearby) {
+    const value = parseBrokenMoney(nearby[1], nearby[2]);
+    if (value != null && value <= 500) return value;
   }
   return null;
 }
@@ -457,7 +537,18 @@ function extractConsumptionHint(text) {
     const value = parseBrNumber(labeled[1]);
     if (value != null && value > 0 && value < 100000) return value;
   }
-  // Pares medido/faturado no fim da linha En Ativa (ex.: 331 333 ou 333 333).
+  // Fim da linha En Ativa: ... 0 333 333 (medido/faturado).
+  const ativaTail = normalized.match(
+    /en\s*[a-z]{0,12}\s*total[\s\S]{0,80}?\b(\d{2,4})\s+(\d{2,4})\s*$/im,
+  );
+  if (ativaTail) {
+    const a = parseBrNumber(ativaTail[1]);
+    const b = parseBrNumber(ativaTail[2]);
+    if (a != null && b != null && a >= 30 && a <= 8000 && Math.abs(a - b) <= 5) {
+      return Math.max(a, b);
+    }
+  }
+  // Pares medido/faturado (ex.: 331 333 ou 333 333).
   const pairs = [...normalized.matchAll(/\b(\d{2,4})\s+(\d{2,4})\b/g)];
   for (const pair of pairs) {
     const a = parseBrNumber(pair[1]);
@@ -466,17 +557,8 @@ function extractConsumptionHint(text) {
     if (a < 30 || a > 8000 || b < 30 || b > 8000) continue;
     if (Math.abs(a - b) <= 5) return Math.max(a, b);
   }
-  // OCR sparse no cabeçalho: "333" + "321,61"
-  const nearTotal = normalized.match(
-    /\b(\d{2,4})\s+(\d{2,4}[.,]\d{2})(?!\d)/,
-  );
-  if (nearTotal) {
-    const kwh = parseBrNumber(nearTotal[1]);
-    const money = parseBrNumber(nearTotal[2]);
-    if (kwh != null && money != null && kwh >= 50 && kwh <= 5000 && money >= 30) {
-      return kwh;
-    }
-  }
+  const header = extractHeaderConsumoTotal(text);
+  if (header.consumption != null) return header.consumption;
   return null;
 }
 
@@ -486,14 +568,14 @@ function readingsMatchConsumption(previous, current, factor, consumptionHint) {
   return Math.abs(delta - consumptionHint) <= Math.max(5, consumptionHint * 0.05);
 }
 
-function buildFieldTrust(parsed, rateEstimated = false) {
+function buildFieldTrust(parsed) {
   const trust = {
     monthKey: parsed.monthKey != null,
     previous: false,
     current: false,
-    rate: false,
+    rate: true,
     extras: parsed.extras != null,
-    factor: parsed.factor != null,
+    factor: true,
   };
 
   const readingsOk = parsed.previous != null && parsed.current != null
@@ -506,81 +588,108 @@ function buildFieldTrust(parsed, rateEstimated = false) {
       const match = readingsMatchConsumption(
         parsed.previous,
         parsed.current,
-        parsed.factor || 1,
+        AMAZONAS_DEFAULT_FACTOR,
         parsed.consumptionHint,
       );
       trust.previous = match;
       trust.current = match;
     } else {
-      // Sem consumo: só confia se ambos tiverem 5 dígitos (menos truncamento).
       const solid = String(parsed.previous).length >= 5 && String(parsed.current).length >= 5;
       trust.previous = solid;
       trust.current = solid;
     }
   }
 
-  // Tarifa estimada não entra no formulário (evita confusão); só a lida no texto.
-  trust.rate = parsed.rate != null && !rateEstimated;
-
   return trust;
+}
+
+function inferCosip(totalHint, consumptionHint, energyCharge) {
+  if (totalHint == null) return null;
+  if (energyCharge != null) {
+    const inferred = Number((totalHint - energyCharge).toFixed(2));
+    if (inferred >= 0 && inferred <= 500) return inferred;
+  }
+  if (consumptionHint != null && consumptionHint > 0) {
+    const energy = consumptionHint * AMAZONAS_DEFAULT_RATE;
+    const inferred = Number((totalHint - energy).toFixed(2));
+    if (inferred >= 0 && inferred <= 500) return inferred;
+  }
+  return null;
+}
+
+function completeReadings(raw) {
+  const factor = AMAZONAS_DEFAULT_FACTOR;
+  // Atual + consumo → anterior
+  if (
+    raw.current != null
+    && raw.consumptionHint != null
+    && raw.consumptionHint > 0
+  ) {
+    const expectedPrevious = raw.current - (raw.consumptionHint / factor);
+    if (Number.isInteger(expectedPrevious) && expectedPrevious >= 0) {
+      const mismatch = raw.previous == null
+        || Math.abs((raw.current - raw.previous) * factor - raw.consumptionHint)
+          > Math.max(5, raw.consumptionHint * 0.05);
+      if (mismatch) raw.previous = expectedPrevious;
+    }
+  }
+  // Anterior + consumo → atual
+  if (
+    raw.previous != null
+    && raw.current == null
+    && raw.consumptionHint != null
+    && raw.consumptionHint > 0
+  ) {
+    const expectedCurrent = raw.previous + (raw.consumptionHint / factor);
+    if (Number.isInteger(expectedCurrent) && expectedCurrent > raw.previous) {
+      raw.current = expectedCurrent;
+    }
+  }
+  // Leituras ok sem consumo → consumo = atual - anterior
+  if (
+    raw.consumptionHint == null
+    && raw.previous != null
+    && raw.current != null
+    && raw.current > raw.previous
+  ) {
+    raw.consumptionHint = (raw.current - raw.previous) * factor;
+  }
 }
 
 /**
  * Extrai campos úteis de texto OCR de fatura de energia (BR / Amazonas Energia).
+ * Tarifa e constante são fixas; OCR foca em mês, consumo, leituras e COSIP.
  */
 export function parseBillText(ocrText) {
   const text = String(ocrText || "");
   const consumptionHint = extractConsumptionHint(text);
   const totalHint = extractTotalHint(text);
   const readings = extractReadings(text, consumptionHint);
+  const energyCharge = extractEnergyCharge(text);
   const raw = {
     monthKey: extractMonthKey(text),
     previous: readings.previous,
     current: readings.current,
-    rate: extractRate(text),
+    rate: AMAZONAS_DEFAULT_RATE,
     extras: extractExtras(text),
-    factor: extractFactor(text),
+    factor: AMAZONAS_DEFAULT_FACTOR,
     consumptionHint,
     totalHint,
   };
 
-  let rateEstimated = false;
-
-  // Se a leitura atual e o consumo batem, recalcula a anterior (OCR costuma errar 1 dígito).
-  if (
-    raw.current != null
-    && raw.consumptionHint != null
-    && raw.consumptionHint > 0
-  ) {
-    const factor = raw.factor || 1;
-    const expectedPrevious = raw.current - (raw.consumptionHint / factor);
-    if (Number.isInteger(expectedPrevious) && expectedPrevious >= 0) {
-      const mismatch = raw.previous == null
-        || Math.abs((raw.current - raw.previous) * factor - raw.consumptionHint) > Math.max(5, raw.consumptionHint * 0.05);
-      if (mismatch) raw.previous = expectedPrevious;
-    }
+  if (raw.extras == null) {
+    raw.extras = inferCosip(totalHint, raw.consumptionHint, energyCharge);
   }
 
-  // Fallback de tarifa: (total - COSIP) / consumo — marcado como estimado.
-  if (
-    raw.rate == null
-    && raw.consumptionHint
-    && raw.totalHint
-    && raw.extras != null
-    && raw.consumptionHint > 0
-  ) {
-    const estimated = (raw.totalHint - raw.extras) / raw.consumptionHint;
-    if (estimated > 0.05 && estimated < 5) {
-      raw.rate = Number(estimated.toFixed(6));
-      rateEstimated = true;
-    }
-  }
+  completeReadings(raw);
 
   const parsed = sanitizeParsed(raw);
+  parsed.factor = AMAZONAS_DEFAULT_FACTOR;
+  parsed.rate = AMAZONAS_DEFAULT_RATE;
   parsed.consumptionHint = raw.consumptionHint;
   parsed.totalHint = raw.totalHint;
-  const trust = buildFieldTrust(parsed, rateEstimated);
-  const core = [trust.monthKey, trust.previous, trust.current, trust.rate];
+  const trust = buildFieldTrust(parsed);
+  const core = [trust.monthKey, trust.previous, trust.current, trust.extras];
   const found = core.filter(Boolean).length;
   const confidence = found / core.length;
 
@@ -588,7 +697,7 @@ export function parseBillText(ocrText) {
     ...parsed,
     consumptionHint: raw.consumptionHint,
     totalHint: raw.totalHint,
-    rateEstimated,
+    rateEstimated: false,
     trust,
     confidence,
     warnings: [],
@@ -611,76 +720,43 @@ function readingError(item, consumptionHint) {
 /** Mescla vários resultados OCR, preferindo campos preenchidos e leituras coerentes. */
 export function mergeParsedResults(results, combinedText = "") {
   const list = (results || []).filter(Boolean);
-  const consumptionHint = list.map((item) => item.consumptionHint).find((v) => v != null) ?? null;
-  const totalHint = list.map((item) => item.totalHint).find((v) => v != null) ?? null;
 
   // Reparse do texto concatenado: junta cabeçalho + medições de regiões diferentes.
-  const fromCombined = combinedText
-    ? parseBillText(combinedText)
-    : null;
+  const fromCombined = combinedText ? parseBillText(combinedText) : null;
+  const consumptionHint = fromCombined?.consumptionHint
+    ?? list.map((item) => item.consumptionHint).find((v) => v != null)
+    ?? null;
+  const totalHint = fromCombined?.totalHint
+    ?? list.map((item) => item.totalHint).find((v) => v != null)
+    ?? null;
 
   const readingCandidate = [...list, fromCombined]
     .filter((item) => item?.previous != null && item?.current != null)
     .sort((a, b) => readingError(a, consumptionHint) - readingError(b, consumptionHint))[0] || null;
 
-  let rateEstimated = false;
   const merged = {
     monthKey: fromCombined?.monthKey ?? null,
     previous: readingCandidate?.previous ?? null,
     current: readingCandidate?.current ?? null,
-    factor: readingCandidate?.factor ?? null,
-    rate: null,
-    extras: null,
+    factor: AMAZONAS_DEFAULT_FACTOR,
+    rate: AMAZONAS_DEFAULT_RATE,
+    extras: fromCombined?.extras ?? null,
     rawPreview: combinedText.slice(0, 600) || "",
-    consumptionHint: fromCombined?.consumptionHint ?? consumptionHint,
-    totalHint: fromCombined?.totalHint ?? totalHint,
+    consumptionHint,
+    totalHint,
   };
 
   for (const item of list) {
     if (merged.monthKey == null && item.monthKey != null) merged.monthKey = item.monthKey;
     if (merged.extras == null && item.extras != null) merged.extras = item.extras;
-    if (merged.factor == null && item.factor != null) merged.factor = item.factor;
     if (!merged.rawPreview && item.rawPreview) merged.rawPreview = item.rawPreview;
   }
 
-  // Preferir tarifa lida no OCR (não estimada).
-  for (const item of [fromCombined, ...list]) {
-    if (!item?.rate) continue;
-    if (item.rateEstimated) continue;
-    merged.rate = item.rate;
-    rateEstimated = false;
-    break;
+  if (merged.extras == null) {
+    merged.extras = inferCosip(merged.totalHint, merged.consumptionHint, null);
   }
 
-  if (
-    merged.rate == null
-    && merged.consumptionHint
-    && merged.totalHint
-    && merged.extras != null
-    && merged.consumptionHint > 0
-  ) {
-    const estimated = (merged.totalHint - merged.extras) / merged.consumptionHint;
-    if (estimated > 0.05 && estimated < 5) {
-      merged.rate = Number(estimated.toFixed(6));
-      rateEstimated = true;
-    }
-  }
-
-  // Recalcula anterior se consumo e atual forem confiáveis.
-  if (
-    merged.current != null
-    && merged.consumptionHint != null
-    && merged.consumptionHint > 0
-  ) {
-    const factor = merged.factor || 1;
-    const expectedPrevious = merged.current - (merged.consumptionHint / factor);
-    if (Number.isInteger(expectedPrevious) && expectedPrevious >= 0) {
-      const mismatch = merged.previous == null
-        || Math.abs((merged.current - merged.previous) * factor - merged.consumptionHint)
-          > Math.max(5, merged.consumptionHint * 0.05);
-      if (mismatch) merged.previous = expectedPrevious;
-    }
-  }
+  completeReadings(merged);
 
   const sanitized = sanitizeParsed({
     ...merged,
@@ -688,15 +764,17 @@ export function mergeParsedResults(results, combinedText = "") {
     warnings: [],
     rawPreview: merged.rawPreview,
   });
+  sanitized.factor = AMAZONAS_DEFAULT_FACTOR;
+  sanitized.rate = AMAZONAS_DEFAULT_RATE;
   sanitized.consumptionHint = merged.consumptionHint;
   sanitized.totalHint = merged.totalHint;
-  sanitized.rateEstimated = rateEstimated;
-  sanitized.trust = buildFieldTrust(sanitized, rateEstimated);
+  sanitized.rateEstimated = false;
+  sanitized.trust = buildFieldTrust(sanitized);
   const core = [
     sanitized.trust.monthKey,
     sanitized.trust.previous,
     sanitized.trust.current,
-    sanitized.trust.rate,
+    sanitized.trust.extras,
   ];
   sanitized.confidence = core.filter(Boolean).length / core.length;
   return sanitized;

@@ -1,0 +1,49 @@
+﻿
+=== header ===
+MARIA ELIZETE S DO NASCIMENTO | 22     ER   e
+TV PADRE MONTEIRO 828 AME 828
+
+
+=== headerBin ===
+“QUTUBRO/2026 “2 QB/I/20062 2988 lel
+WibRG 0c o UI LLIB a SEL
+TV PADRE MONTEIRO 828 AME B28
+
+
+=== readings ===
+Ren, fo Essmenes EA Tal Sphalar Tarso: Ea Gava] Sã  Eai eim
+\ “En Átiva Total       143       14646 = 1,408      O      EE
+|                                                                     I
+i
+
+
+=== readingsSoft ===
+ee, Sale Ena del TERA      a
+|  Tel, $n BRmmgeas oh uel Tal Seboior Thandie fecais Sede ATE
+h “En Átiva Total       1%       455 1, vod      A IA
+
+
+=== cosip ===
+DESCRIÇÃO DA CONTA
+
+
+MERGED {
+  monthKey: '2026-10',
+  previous: 14646,
+  current: 20062,
+  factor: 1,
+  rate: 0.87571,
+  extras: null,
+  consumptionHint: 5416,
+  totalHint: null,
+  trust: {
+    monthKey: true,
+    previous: true,
+    current: true,
+    rate: true,
+    extras: false,
+    factor: true
+  }
+}
+
+FAIL scan pipeline

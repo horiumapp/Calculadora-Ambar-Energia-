@@ -1,0 +1,196 @@
+﻿node : Detected 385 diacritics
+No linha:1 caractere:1
++ node scripts/test-ocr-image.mjs "C:\Users\JACKISON\.cursor\projects\c ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Detected 385 diacritics:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+=== soft-auto ===
+{
+  monthKey: '2026-10',
+  previous: null,
+  current: null,
+  rate: 0.87571,
+  extras: null,
+  factor: 1,
+  consumptionHint: null,
+  totalHint: null,
+  rateEstimated: false,
+  trust: {
+    monthKey: true,
+    previous: false,
+    current: false,
+    rate: true,
+    extras: false,
+    factor: true
+  },
+  confidence: 0.25,
+  warnings: [],
+  rawPreview: 'CONTA MÊS  CONSU MO O (KWH)    TOTAL A PAGAR (R$)\n' +
+    '\n' +
+    'OUTUBRO/2026 — 05/11/2028 38 allel\n' +
+    'MARIA ELIZETE Ss DO NASCIMENTO         o      EE   oo\n' +
+    'TV PADRE MONTEIRO 828 AME 828\n' +
+    '\n' +
+    'CENTRO\n' +
+    'CEP: 69.830-000 - LABREA            R: 539.118.03.30.02000¢\n' +
+    '\n' +
+    'DADOS DA UNIDADE CONSUMIDORA:\n' +
+    '\n' +
+    'Ofpo/subar CEETERRIC=C MARES, MME PRT" MARR\n' +
+    '\n' +
+    'DATAS DA LEITURA\n' +
+    '\n' +
+    'Atual:      3 10/2020     Dias de consumo:\n' +
+    '3 Anterior — 03/03/2826   Próxima leitura: 89/11/2826  Apresentação: 16/19/2026\n' +
+    '\n' +
+    'DADOS DA LEITURA [KWH)\n' +
+    '\n' +
+    '| PES, fa Si  n eza leit. Ava Leit. Anterior. Constante resíduo. Medide, Faturado\n' +
+    '\n' +
+    'CONTR. ILUMINACAO PUB. (COSIP)\n'
+}
+Detected 594 diacritics
+
+=== bin-sparse ===
+{
+  monthKey: '2026-10',
+  previous: null,
+  current: null,
+  rate: 0.87571,
+  extras: 30,
+  factor: 1,
+  consumptionHint: null,
+  totalHint: null,
+  rateEstimated: false,
+  trust: {
+    monthKey: true,
+    previous: false,
+    current: false,
+    rate: true,
+    extras: true,
+    factor: true
+  },
+  confidence: 0.5,
+  warnings: [],
+  rawPreview: 'CONTA MES\n' +
+    '\n' +
+    'VENCIMENTO    CONSUMO (KWH)    LLL A PAGAR (RS)\n' +
+    '\n' +
+    '-— QUTUBRO/2026 |\n' +
+    '\n' +
+    'BI\n' +
+    '\n' +
+    '338\n' +
+    '\n' +
+    'lel\n' +
+    '\n' +
+    'MARIA ELIZETE Ss 00 NASCIMENTO *\n' +
+    '\n' +
+    'TV PADRE MONTEIRO 828 AME 828\n' +
+    '\n' +
+    'CENTRO\n' +
+    '\n' +
+    'CEP: 89.83@-200 - LABREA\n' +
+    '\n' +
+    'R: 539. 118.03. 30. 020008\n' +
+    '\n' +
+    'DADOS DA UNIDADE CONSUMIDORA\n' +
+    '\n' +
+    'Cgpo/subar CESTAS oo BIBITA MTIFIRMC PRT CONVENCIONAL\n' +
+    '\n' +
+    'J\n' +
+    '\n' +
+    '(\n' +
+    '\n' +
+    'DATAS DA LEITURA\n' +
+    '\n' +
+    '> [B/\n' +
+    '\n' +
+    '5\n' +
+    '\n' +
+    'Atual\n' +
+    '\n' +
+    'A.\n' +
+    '\n' +
+    'Dias de consumo\n' +
+    '\n' +
+    'Emissão\n' +
+    '\n' +
+    'Anterior:\n' +
+    '\n' +
+    'dg. 03/2026\n' +
+    '\n' +
+    'Próxima leitura\n' +
+    '\n' +
+    'B9/ 112075\n' +
+    '\n' +
+    'Apresentação: [0/10/2826\n' +
+    '\n' +
+    'DADOS DA LEITURA [KWH)\n' +
+    '\n' +
+    'sc, da\n' +
+    '\n' +
+    '|\n' +
+    '\n' +
+    'n Átiva To\n' +
+    '\n' +
+    'n eza tell. Ava Leit. Anterior. Constante resíduo. Medide, Faturada\n' +
+    '\n' +
+    'DESCRI\n' +
+    '\n' +
+    'iho\n' +
+    '\n' +
+    'QD\n' +
+    '\n' +
+    'ONT.\n' +
+    '\n' +
+    'UNS UM'
+}
+
+=== MERGED ===
+{
+  monthKey: '2026-10',
+  previous: null,
+  current: null,
+  factor: 1,
+  rate: 0.87571,
+  extras: 30,
+  rawPreview: 'CONTA MÊS  CONSU MO O (KWH)    TOTAL A PAGAR (R$)\n' +
+    '\n' +
+    'OUTUBRO/2026 — 05/11/2028 38 allel\n' +
+    'MARIA ELIZETE Ss DO NASCIMENTO         o      EE   oo\n' +
+    'TV PADRE MONTEIRO 828 AME 828\n' +
+    '\n' +
+    'CENTRO\n' +
+    'CEP: 69.830-000 - LABREA            R: 539.118.03.30.02000¢\n' +
+    '\n' +
+    'DADOS DA UNIDADE CONSUMIDORA:\n' +
+    '\n' +
+    'Ofpo/subar CEETERRIC=C MARES, MME PRT" MARR\n' +
+    '\n' +
+    'DATAS DA LEITURA\n' +
+    '\n' +
+    'Atual:      3 10/2020     Dias de consumo:\n' +
+    '3 Anterior — 03/03/2826   Próxima leitura: 89/11/2826  Apresentação: 16/19/2026\n' +
+    '\n' +
+    'DADOS DA LEITURA [KWH)\n' +
+    '\n' +
+    '| PES, fa Si  n eza leit. Ava Leit. Anterior. Constante resíduo. Medide, Faturado\n' +
+    '\n' +
+    'CONTR. ILUMINACAO PUB. (COSIP)\n',
+  consumptionHint: null,
+  totalHint: null,
+  confidence: 0.5,
+  warnings: [],
+  rateEstimated: false,
+  trust: {
+    monthKey: true,
+    previous: false,
+    current: false,
+    rate: true,
+    extras: true,
+    factor: true
+  }
+}

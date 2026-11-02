@@ -1,0 +1,231 @@
+﻿node : Detected 119 diacritics
+No linha:1 caractere:1
++ node scripts/test-ocr-image.mjs scripts/_ocr-soft-auto.jpg 2>&1 | Out ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Detected 119 diacritics:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+=== soft-auto ===
+{
+  monthKey: null,
+  previous: 4045,
+  current: 14978,
+  rate: null,
+  extras: null,
+  factor: 1,
+  consumptionHint: null,
+  totalHint: null,
+  rateEstimated: false,
+  trust: {
+    monthKey: false,
+    previous: false,
+    current: false,
+    rate: false,
+    extras: false,
+    factor: true
+  },
+  confidence: 0,
+  warnings: [],
+  rawPreview: 'OUTUBRO, [2026    05/11/2026      333     321 81\n' +
+    '\n' +
+    'IV PADRE toa S DO NASCIMENTO\n' +
+    '|           EIRO 82\n' +
+    'CENTRO               8 AME 629\n' +
+    '\n' +
+    "CEP: 8      I-|     -     '\n" +
+    '9 8300-000   LABREA                R: 539.118 03 30 020009\n' +
+    '\n' +
+    '                    GES TBERC fi              dian “(Tis             NRRL" GTR\n' +
+    'aE Er Bs Fig                                                     ro  TY\n' +
+    'U5/10/2026      dl                      WWW\n' +
+    'a0 00 69                                     WIP LI LG                             EAT PEE\n' +
+    '#8 69/2026                          89/11/2026                     VMIVWR\n' +
+    '\n' +
+    'En Ativa Total      '
+}
+
+=== bin-sparse ===
+{
+  monthKey: null,
+  previous: 2145,
+  current: 2826,
+  rate: null,
+  extras: null,
+  factor: 1,
+  consumptionHint: null,
+  totalHint: null,
+  rateEstimated: false,
+  trust: {
+    monthKey: false,
+    previous: false,
+    current: false,
+    rate: false,
+    extras: false,
+    factor: true
+  },
+  confidence: 0,
+  warnings: [],
+  rawPreview: 'UPAS o E\n' +
+    '\n' +
+    '=>\n' +
+    '\n' +
+    'o\n' +
+    '\n' +
+    'pd. aor\n' +
+    '\n' +
+    'mn: bh\n' +
+    '\n' +
+    'VEN\n' +
+    '\n' +
+    'OUTUBRO/2826\n' +
+    '\n' +
+    'MARTA ELIZPE?\n' +
+    '\n' +
+    '05/11/2028\n' +
+    '\n' +
+    '33\n' +
+    '\n' +
+    '321 81\n' +
+    '\n' +
+    'TY PADRE\n' +
+    '\n' +
+    '= DO NASCIMENTO\n' +
+    '\n' +
+    'MONTEIRO B28 AME B2¢\n' +
+    '\n' +
+    'CENTRO\n' +
+    '\n' +
+    'R 539 118 903 39 20009\n' +
+    '\n' +
+    'CEP 69 89830-020 - -ABREA\n' +
+    '\n' +
+    'NOEL\n' +
+    '\n' +
+    'TREY\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    'RESIDENCIAL o AIFASICA  2145) i\n' +
+    '\n' +
+    '— — — a...\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    ']\n' +
+    '\n' +
+    'ry\n' +
+    '\n' +
+    'qe\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    'wm\n' +
+    '\n' +
+    'Dias cle connumo\n' +
+    '\n' +
+    '3\n' +
+    '\n' +
+    ' im\n' +
+    '\n' +
+    'bh a\n' +
+    '\n' +
+    'LE air\n' +
+    '\n' +
+    '= dia ba\n' +
+    '\n' +
+    '=\n' +
+    '\n' +
+    '43.43, 2826\n' +
+    '\n' +
+    '- —\n' +
+    '\n' +
+    'Prógimo leitura:   AA L825\n' +
+    '\n' +
+    '7 js. We WE\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    'PELES SA\n' +
+    '\n' +
+    'de\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    '-—  —\n' +
+    '\n' +
+    '= à\n' +
+    '\n' +
+    '—\n' +
+    '\n' +
+    '“\n' +
+    '\n' +
+    'Lexi. Ande\n' +
+    '\n' +
+    'rior Consten\n' +
+    '\n' +
+    '=\n' +
+    '\n' +
+    'RE\n' +
+    '\n' +
+    'Pde\n' +
+    '\n' +
+    '4 Ro co o\n' +
+    '\n' +
+    "'            '\n" +
+    '\n' +
+    '|\n' +
+    '\n' +
+    'pás\n' +
+    '\n' +
+    '1,4\n' +
+    '\n' +
+    'j\n' +
+    '\n' +
+    'am\n' +
+    '\n' +
+    'im\n' +
+    '\n' +
+    'RARE\n'
+}
+
+=== MERGED ===
+{
+  monthKey: null,
+  previous: 4045,
+  current: 14978,
+  factor: 1,
+  rate: null,
+  extras: null,
+  rawPreview: 'OUTUBRO, [2026    05/11/2026      333     321 81\n' +
+    '\n' +
+    'IV PADRE toa S DO NASCIMENTO\n' +
+    '|           EIRO 82\n' +
+    'CENTRO               8 AME 629\n' +
+    '\n' +
+    "CEP: 8      I-|     -     '\n" +
+    '9 8300-000   LABREA                R: 539.118 03 30 020009\n' +
+    '\n' +
+    '                    GES TBERC fi              dian “(Tis             NRRL" GTR\n' +
+    'aE Er Bs Fig                                                     ro  TY\n' +
+    'U5/10/2026      dl                      WWW\n' +
+    'a0 00 69                                     WIP LI LG                             EAT PEE\n' +
+    '#8 69/2026                          89/11/2026                     VMIVWR\n' +
+    '\n' +
+    'En Ativa Total      ',
+  consumptionHint: null,
+  totalHint: null,
+  confidence: 0,
+  warnings: [],
+  rateEstimated: false,
+  trust: {
+    monthKey: false,
+    previous: false,
+    current: false,
+    rate: false,
+    extras: false,
+    factor: true
+  }
+}

@@ -1,0 +1,130 @@
+﻿image 1024 x 840
+
+=== headerValues/thick ===
+MARIA LLICCIE 9 UV NROLVIMLNIV
+TV PADRE MONTEIRO 828 AME B28
+NENTRD
+
+
+=== headerValues/soft ===
+MARIA CLILCTE oo UV NASULIMLINILY
+TV PADRE MONTEIRO 828 AME 828
+CENTRO
+
+
+=== readingRow/thick ===
+j        i          E a du E a o e
+MS eras re ro ir Tae FI TET
+Riad Ta ET. ria
+5     a
+ee  A AAA    ma ar   rs    oo. om   oo   mam     ner   Eris at are
+   IT ERC aL EL BH EL fe P   ETERS     Art onal   To ay TNT   ith I Sl IN    e ne er E E    Pra ie BL A RS
+
+
+=== readingRow/soft ===
+Te TE  Vv  TACT  TCA EA E E  CO Mr
+Va jo  SR q NZ  Poll   Ha  KC ENT  TR
+AT Lenta Roe Naa estas ce eR ES
+Ya      2
+l     ,         o   as        1          i   Sa    7    i   .   Fx    it.  .   bm      0    ol al   MT      Do as gm A
+SE  3        ARA  a  i B3     .       cof    ICL  i   E      SIA  Fl   .     UI    EEE EE  oe     rh   1  a
+LN   i mz o  .  NA EN E  Eat     Poa  PR       NS     Pr, A   PEE E E   PA  TI ENA E      x  7  ep DA  SNL aac
+
+
+=== cosipRow/thick ===
+© EnAtivaTotal — 14978 © Idd Le@d 0 Q 159 3
+
+
+=== cosipRow/soft ===
+© EnAtiva Total 1497 led 1680 6 353 33
+
+
+=== topLabels/thick ===
+COUTUBROZZEZe co QI LL/ZOL0O oco Te dL Bl
+
+
+=== topLabels/soft ===
+— QUIUBRO/2020 ~~ Borll/zée 383 2 3B
+MARIA ELIZETE S DO NASCIMENTO |||     eee
+
+node : Detected 607 diacritics
+No linha:1 caractere:1
++ node scripts/test-scan-ocr.mjs scripts/scan-bill.jpg 2>&1 | Out-File  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Detected 607 diacritics:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+=== full/thick ===
+=      I LE o
+
+QUTUBRO/2008 *   an  Ei mg
+MARIA ELIZETE S bo ‘NASCIMENTO
+
+TV PADRE MONTEIRO 828 AME B28
+
+CENTRO
+CEP: B88.830-000 - LABREA                R: 539. 118. 03. se. 22000
+
+on mec ço Tao         pu  rp Tem Trac
+PRESAS Be dai)  io        MARES ENA     DE
+Lalas Lo          ett LL A      or  x
+
+RESIDENCIAL = CG ain” HE ga Tw
+
+i) afl Cy
+
+pn BOWES snd pe  16/10/2006 -
+ Bat 08/99/2026  Pairing eine: 0711030 sess   2 1610 2026 |
+
+ERES TRE TR AT
+sll BOT ETTU Leet]
+
+NT Ci BK BE ¥ 7 TA TR TE
+
+DESCRIÇÃO DA CONTA
+
+CONTR. ILUMINACAO PUB. (COSIP)
+
+
+MERGED {
+  monthKey: null,
+  previous: 1497,
+  current: 1680,
+  factor: 1,
+  rate: 0.87571,
+  extras: null,
+  rawPreview: 'MARIA LLICCIE 9 UV NROLVIMLNIV\n' +
+    'TV PADRE MONTEIRO 828 AME B28\n' +
+    'NENTRD\n' +
+    '\n' +
+    'MARIA CLILCTE oo UV NASULIMLINILY\n' +
+    'TV PADRE MONTEIRO 828 AME 828\n' +
+    'CENTRO\n' +
+    '\n' +
+    'j        i          E a du E a o e\n' +
+    'MS eras re ro ir Tae FI TET\n' +
+    'Riad Ta ET. ria\n' +
+    '5     a\n' +
+    'ee  A AAA    ma ar   rs    oo. om   oo   mam     ner   Eris at are\n' +
+    '   IT ERC aL EL BH EL fe P   ETERS     Art onal   To ay TNT   ith I Sl IN    e ne er E E    Pra ie BL A RS\n' +
+    '\n' +
+    'Te TE  Vv  TACT  TCA EA E E  CO Mr\n' +
+    'Va jo  SR q NZ  Poll   Ha  KC ENT  TR\n' +
+    'AT Lenta Roe Naa estas ce eR ES\n' +
+    'Ya      2\n' +
+    'l     ,         o   as        1          i   Sa    7    i   .   Fx    it.  .   bm ',
+  consumptionHint: 183,
+  totalHint: null,
+  confidence: 0.5,
+  warnings: [],
+  rateEstimated: false,
+  trust: {
+    monthKey: false,
+    previous: true,
+    current: true,
+    rate: true,
+    extras: false,
+    factor: true
+  }
+}

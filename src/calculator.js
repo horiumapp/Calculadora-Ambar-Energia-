@@ -193,18 +193,21 @@ function renderImportFields(parsed) {
     const ok = !parsed.trust || parsed.trust[key] !== false;
     return ok ? String(value) : `${value} (revisar)`;
   };
+  const consumption = parsed.consumptionHint != null
+    ? parsed.consumptionHint
+    : (parsed.previous != null && parsed.current != null
+      ? parsed.current - parsed.previous
+      : null);
+  const due = parsed.monthKey ? formatDateBr(dueDateFromMonth(parsed.monthKey)) : "—";
   const rows = [
-    ["Mês", mark("monthKey", parsed.monthKey)],
+    ["Conta mês", mark("monthKey", parsed.monthKey)],
+    ["Vencimento", due],
+    ["Consumo (kWh)", consumption != null ? String(consumption) : "—"],
     ["Leitura anterior", mark("previous", parsed.previous)],
     ["Leitura atual", mark("current", parsed.current)],
-    ["Constante", mark("factor", parsed.factor)],
-    [
-      "Tarifa",
-      parsed.rate != null
-        ? `${parsed.rate}${parsed.rateEstimated || parsed.trust?.rate === false ? " (revisar)" : ""}`
-        : "—",
-    ],
-    ["COSIP", mark("extras", parsed.extras)],
+    ["Constante", "1"],
+    ["Tarifa", "0,875710"],
+    ["Iluminação pública", mark("extras", parsed.extras)],
   ];
   list.hidden = false;
   list.innerHTML = rows
@@ -213,7 +216,6 @@ function renderImportFields(parsed) {
 
   const preview = $("import-ocr-preview");
   if (preview) {
-    // Preview só sob demanda visual: evita poluir e confundir com texto OCR sujo.
     preview.hidden = true;
     preview.textContent = "";
   }
@@ -223,12 +225,28 @@ function applyImportedBill(parsed) {
   // Sempre parte do zero para não misturar lixo de tentativas anteriores.
   clearFormFields({ keepMonth: false });
 
-  const monthKey = trustedValue(parsed, "monthKey");
-  const previous = trustedValue(parsed, "previous");
-  const current = trustedValue(parsed, "current");
-  const factor = trustedValue(parsed, "factor");
-  const rate = trustedValue(parsed, "rate");
-  const extras = trustedValue(parsed, "extras");
+  const monthKey = parsed.monthKey ?? null;
+  let previous = trustedValue(parsed, "previous") ?? parsed.previous ?? null;
+  let current = trustedValue(parsed, "current") ?? parsed.current ?? null;
+  const consumption = parsed.consumptionHint ?? null;
+
+  // Garante leituras coerentes com o consumo (atual - anterior).
+  if (current != null && consumption != null && Number.isInteger(current - consumption)) {
+    const expectedPrevious = current - consumption;
+    if (
+      previous == null
+      || Math.abs((current - previous) - consumption) > Math.max(5, consumption * 0.05)
+    ) {
+      previous = expectedPrevious;
+    }
+  } else if (previous != null && consumption != null && current == null) {
+    current = previous + consumption;
+  }
+
+  // Amazonas BT: constante e tarifa são fixas; COSIP vem do OCR ou total−energia.
+  const factor = 1;
+  const rate = 0.87571;
+  const extras = parsed.extras ?? null;
 
   if (monthKey) {
     $("bill-month-input").value = monthKey;
@@ -238,15 +256,28 @@ function applyImportedBill(parsed) {
   writeFormDraft({
     previous: previous != null ? String(previous) : "",
     current: current != null ? String(current) : "",
-    factor: factor != null
-      ? String(factor)
-      : (previous != null || current != null ? "1" : ""),
-    rate: rate != null ? String(rate) : "",
+    factor: String(factor),
+    rate: String(rate),
     extras: extras != null ? String(extras) : "",
   });
 
   if (selectedMonthKey) snapshotMonthDraft(selectedMonthKey);
-  renderImportFields(parsed);
+  renderImportFields({
+    ...parsed,
+    previous,
+    current,
+    factor,
+    rate,
+    extras,
+    trust: {
+      monthKey: monthKey != null,
+      previous: previous != null,
+      current: current != null,
+      factor: true,
+      rate: true,
+      extras: extras != null,
+    },
+  });
   syncMonthLabels();
   refreshResultFromForm();
 }
@@ -843,18 +874,20 @@ export function initCalculator(userId) {
         const parsed = await importBillFromFile(file, (status) => setImportStatus(status));
         applyImportedBill(parsed);
         const missing = [];
-        if (trustedValue(parsed, "monthKey") == null) missing.push("mês");
-        if (trustedValue(parsed, "previous") == null) missing.push("leitura anterior");
-        if (trustedValue(parsed, "current") == null) missing.push("leitura atual");
-        if (trustedValue(parsed, "rate") == null) missing.push("tarifa");
-        if (trustedValue(parsed, "extras") == null) missing.push("COSIP");
+        if (parsed.monthKey == null) missing.push("conta mês");
+        if ($("previous").value === "") missing.push("leitura anterior");
+        if ($("current").value === "") missing.push("leitura atual");
+        if ($("extras").value === "") missing.push("iluminação pública (COSIP)");
         if (missing.length) {
           setImportStatus(
-            `Só preenchi o que estava seguro. Complete/revise: ${missing.join(", ")}.`,
+            `Constante 1 e tarifa 0,875710 já aplicadas. Falta: ${missing.join(", ")}.`,
             "ok",
           );
         } else {
-          setImportStatus("Fatura lida. Confira os valores antes de salvar.", "ok");
+          setImportStatus(
+            "Fatura lida (constante 1 · tarifa 0,875710). Confira e salve.",
+            "ok",
+          );
         }
       } catch (error) {
         if (error?.parsed) renderImportFields(error.parsed);
