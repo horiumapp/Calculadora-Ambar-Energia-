@@ -36,7 +36,16 @@ function setAuthMode(mode) {
     : isLogin
       ? "Entrar"
       : "Cadastrar";
-  $("auth-toggle").textContent = isLogin ? "Criar uma conta" : "Já tenho conta";
+  const toggleLabel = isLogin ? "Criar uma conta" : "Já tenho conta";
+  $("auth-toggle-label").textContent = toggleLabel;
+  $("auth-toggle").title = toggleLabel;
+  $("auth-toggle").setAttribute("aria-label", toggleLabel);
+  const signupIcon = $("auth-toggle").querySelector(".gate-icon-signup");
+  const signinIcon = $("auth-toggle").querySelector(".gate-icon-signin");
+  if (signupIcon && signinIcon) {
+    signupIcon.hidden = !isLogin;
+    signinIcon.hidden = isLogin;
+  }
   $("auth-form").dataset.mode = mode;
   $("auth-name-field").hidden = !(!isLogin && !isReset);
   $("auth-password-field").hidden = isReset;

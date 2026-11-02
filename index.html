@@ -69,11 +69,35 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
         </label>
         <p id="auth-error" class="form-error" hidden></p>
         <p id="auth-ok" class="form-ok" hidden></p>
-        <button class="primary" id="auth-submit" type="submit">Entrar</button>
+        <button class="primary gate-submit" id="auth-submit" type="submit">Entrar</button>
       </form>
-      <button class="ghost gate-toggle" id="auth-forgot" type="button">Esqueci a senha</button>
-      <button class="ghost gate-toggle" id="auth-back-login" type="button" hidden>Voltar ao login</button>
-      <button class="ghost gate-toggle" id="auth-toggle" type="button">Criar uma conta</button>
+      <div class="gate-links">
+        <button class="gate-link" id="auth-forgot" type="button" title="Esqueci a senha" aria-label="Esqueci a senha">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+            <path d="M7.5 14.5a3.5 3.5 0 1 1 3.3-4.7l6.7 6.7v2.5h-2.5l-.8-.8v-1.7h-1.7l-1.5-1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="7.5" cy="10.5" r="1" fill="currentColor"/>
+          </svg>
+          <span>Esqueci a senha</span>
+        </button>
+        <button class="gate-link" id="auth-back-login" type="button" title="Voltar ao login" aria-label="Voltar ao login" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+            <path d="M15 18 9 12l6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Voltar ao login</span>
+        </button>
+        <button class="gate-link" id="auth-toggle" type="button" title="Criar uma conta" aria-label="Criar uma conta">
+          <svg class="gate-icon-signup" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+            <path d="M15 19v-1.4c0-1.8-2.2-3.3-5-3.3s-5 1.5-5 3.3V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            <circle cx="10" cy="8.5" r="3" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M18 8v6M15 11h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+          <svg class="gate-icon-signin" viewBox="0 0 24 24" aria-hidden="true" fill="none" hidden>
+            <path d="M10 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            <path d="M14 12h7M18 8l3 4-3 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span id="auth-toggle-label">Criar uma conta</span>
+        </button>
+      </div>
     </div>
   </section>
 

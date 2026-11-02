@@ -597,7 +597,46 @@ input[type="month"]{color-scheme:light}
 }
 .password-toggle svg{width:18px;height:18px;display:block}
 .password-toggle:hover{background:#eef2f6;color:var(--navy)}
-.gate-toggle{width:100%;margin-top:10px}
+.gate-submit{
+  width:100%;
+  margin-top:8px;
+  padding:14px 16px;
+  font-size:14px;
+}
+.gate-links{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  align-items:center;
+  gap:8px 18px;
+  margin-top:16px;
+}
+.gate-link{
+  font-family:var(--sans);
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:transparent;
+  border:0;
+  padding:6px 4px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:500;
+  cursor:pointer;
+  text-decoration:none;
+  line-height:1.3;
+}
+.gate-link svg{
+  width:15px;
+  height:15px;
+  flex-shrink:0;
+  opacity:.85;
+}
+.gate-link:hover{
+  color:var(--navy);
+  text-decoration:underline;
+}
+.gate-link:hover svg{opacity:1}
 .header-logout{margin-top:8px}
 .form-error{
   color:#9b2c2c;
