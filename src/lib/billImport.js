@@ -184,14 +184,23 @@ function cropCanvasRegion(sourceCanvas, y0, y1) {
 async function withQuietTesseractLogs(run) {
   // O WASM do Tesseract imprime "Detected N diacritics" no console — não é erro.
   const originalLog = console.log;
+  const originalInfo = console.info;
+  const isDiacriticsNoise = (args) => args.some(
+    (arg) => typeof arg === "string" && /diacritics/i.test(arg),
+  );
   console.log = (...args) => {
-    if (typeof args[0] === "string" && /diacritics/i.test(args[0])) return;
+    if (isDiacriticsNoise(args)) return;
     originalLog.apply(console, args);
+  };
+  console.info = (...args) => {
+    if (isDiacriticsNoise(args)) return;
+    originalInfo.apply(console, args);
   };
   try {
     return await run();
   } finally {
     console.log = originalLog;
+    console.info = originalInfo;
   }
 }
 
