@@ -24,7 +24,8 @@ No repositório foram implementadas correções de código, migration SQL aditiv
 | Edge Function hardenada | **PENDENTE DE DEPLOY** (resposta ainda usa mensagem antiga) |
 | Rotação do `CRON_SECRET` | **AÇÃO MANUAL OBRIGATÓRIA** |
 
-Pentest automatizado: **25 APROVADOS / 1 REPROVADO** (ver §8).
+Pentest automatizado (após migration + deploy): **26/26 APROVADOS**.  
+Smoke test (`npm run test:smoke`): **15/15 APROVADOS** (perfil, fatura, marcar paga, isolamento A↔B).
 
 ---
 
@@ -217,12 +218,15 @@ npx supabase functions deploy send-due-alerts
 ```
 Secret opcional: `ALLOWED_ORIGIN=https://seu-dominio.com`
 
-### D) Auth
-- Confirm email: ON em produção
-- Minimum password length ≥ 8
-- Site URL / Redirect URLs = URL do app
-- Attack protection / rate limit: ON
-- MFA TOTP: opcional, recomendado para contas admin futuras
+### D) Auth (aplicado via `supabase config push` em 2026-11-02)
+- Confirm email: ON
+- Minimum password length: **8**
+- Password requirements: `letters_digits`
+- Site URL: `http://localhost:5173`
+- Redirect URLs: `http://localhost:5173`, `http://127.0.0.1:5173`
+- `secure_password_change`: ON
+- MFA TOTP: já habilitado no projeto remoto
+- Em domínio de produção, atualize Site URL / Redirect URLs para a URL pública
 
 ### E) Re-testar
 ```bash

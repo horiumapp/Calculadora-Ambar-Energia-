@@ -100,7 +100,10 @@ Scripts:
 npm run build
 npm audit
 npm run test:security
+npm run test:smoke
 ```
+
+Auth remoto (senha ≥ 8, confirm email, redirect `localhost:5173`) fica em [`supabase/config.toml`](supabase/config.toml) e foi aplicado com `npx supabase config push`.
 
 ## 6. Uso no app
 
