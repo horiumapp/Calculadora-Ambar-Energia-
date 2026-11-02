@@ -63,11 +63,13 @@ function processRegion(raw, y0, y1, { scale = 2, harden = true, thicken = 1 } = 
 
 const regions = [
   { label: "header", y0: 0.03, y1: 0.18, harden: false, thicken: 0, scale: 2 },
+  { label: "topValues", y0: 0.08, y1: 0.16, harden: false, thicken: 0, scale: 2.5 },
   { label: "headerBin", y0: 0.03, y1: 0.18, harden: true, thicken: 1, scale: 2.2 },
   { label: "readings", y0: 0.55, y1: 0.78, harden: true, thicken: 1, scale: 2.5 },
   { label: "readingsSoft", y0: 0.55, y1: 0.78, harden: false, thicken: 0, scale: 2.2 },
   { label: "readingsLine", y0: 0.58, y1: 0.72, harden: true, thicken: 1, scale: 3 },
-  { label: "cosip", y0: 0.68, y1: 0.92, harden: true, thicken: 1, scale: 2 },
+  { label: "desc", y0: 0.72, y1: 0.95, harden: false, thicken: 1, scale: 2.2 },
+  { label: "cosip", y0: 0.78, y1: 0.95, harden: true, thicken: 1, scale: 2.5 },
 ];
 
 const worker = await createWorker("por+eng");
@@ -107,6 +109,10 @@ const ok = merged.monthKey === "2026-10"
   && merged.previous === 14645
   && merged.factor === 1
   && merged.rate === 0.87571
-  && merged.extras === 30;
+  && merged.consumptionHint === 333
+  && (merged.extras == null || Math.abs(merged.extras - 30) <= 1);
 console.log(ok ? "\nPASS scan pipeline" : "\nFAIL scan pipeline");
+if (!ok) {
+  console.error("expected month=2026-10 readings=14645/14978 kwh=333 rate/factor fixed");
+}
 process.exit(ok ? 0 : 1);

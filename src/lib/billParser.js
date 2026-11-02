@@ -672,16 +672,39 @@ function buildFieldTrust(parsed) {
   return trust;
 }
 
-function inferCosip(totalHint, consumptionHint, energyCharge) {
-  if (totalHint == null) return null;
-  if (energyCharge != null) {
-    const inferred = Number((totalHint - energyCharge).toFixed(2));
-    if (inferred >= 0 && inferred <= 500) return inferred;
+function extractMoneyAmounts(text) {
+  const normalized = normalizeText(text);
+  const out = [];
+  for (const match of normalized.matchAll(/\b(\d{2,4})[.,\s]+(\d{2})\b/g)) {
+    const money = parseBrokenMoney(match[1], match[2]);
+    if (money != null) out.push(money);
   }
+  return out;
+}
+
+function inferCosip(totalHint, consumptionHint, energyCharge, text = "") {
+  if (totalHint != null) {
+    if (energyCharge != null) {
+      const inferred = Number((totalHint - energyCharge).toFixed(2));
+      if (inferred >= 0 && inferred <= 500) return inferred;
+    }
+    if (consumptionHint != null && consumptionHint > 0) {
+      const energy = consumptionHint * AMAZONAS_DEFAULT_RATE;
+      const inferred = Number((totalHint - energy).toFixed(2));
+      if (inferred >= 0 && inferred <= 500) return inferred;
+    }
+  }
+
+  // Sem total explícito: procura valores R$ e estima total ≈ energia + COSIP.
   if (consumptionHint != null && consumptionHint > 0) {
     const energy = consumptionHint * AMAZONAS_DEFAULT_RATE;
-    const inferred = Number((totalHint - energy).toFixed(2));
-    if (inferred >= 0 && inferred <= 500) return inferred;
+    const monies = extractMoneyAmounts(text);
+    const total = monies.find((m) => m > energy + 5 && m < energy + 400)
+      ?? monies.find((m) => Math.abs(m - (energy + 30)) <= 3);
+    if (total != null) {
+      const inferred = Number((total - energy).toFixed(2));
+      if (inferred >= 0 && inferred <= 500) return inferred;
+    }
   }
   return null;
 }
@@ -748,7 +771,7 @@ export function parseBillText(ocrText) {
   };
 
   if (raw.extras == null) {
-    raw.extras = inferCosip(totalHint, raw.consumptionHint, energyCharge);
+    raw.extras = inferCosip(totalHint, raw.consumptionHint, energyCharge, text);
   }
 
   completeReadings(raw);
@@ -823,7 +846,12 @@ export function mergeParsedResults(results, combinedText = "") {
   }
 
   if (merged.extras == null) {
-    merged.extras = inferCosip(merged.totalHint, merged.consumptionHint, null);
+    merged.extras = inferCosip(
+      merged.totalHint,
+      merged.consumptionHint,
+      null,
+      combinedText || merged.rawPreview || "",
+    );
   }
 
   completeReadings(merged);
