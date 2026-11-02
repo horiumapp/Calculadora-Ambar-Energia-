@@ -5,4 +5,5 @@ dist
 .twilio.secrets
 .resend.secrets
 .DS_Store
+supabase/.temp
 
