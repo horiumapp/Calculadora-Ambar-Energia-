@@ -122,76 +122,142 @@ async function testAnonRls(env) {
   record("S-RLS-01", ok, `anon bills → status=${res.status} rows=${Array.isArray(body) ? body.length : "?"}`);
 }
 
-async function testAuthenticatedBillFlow(auth) {
+async function clientAs(url, anon, email, password) {
+  const sb = createClient(url, anon, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return { sb, user: data.user, session: data.session };
+}
+
+async function testAuthenticatedBillFlow(env, auth) {
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SMOKE_SERVICE_ROLE_KEY;
+  const url = env.VITE_SUPABASE_URL;
+  const anon = env.VITE_SUPABASE_ANON_KEY;
+
+  // Preferir usuários confirmados via service role (produção com Confirm email ON).
+  if (serviceKey) {
+    const admin = createClient(url, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const stamp = Date.now();
+    const emailA = `smoke.a.${stamp}@example.com`;
+    const emailB = `smoke.b.${stamp}@example.com`;
+    const password = "SmokeTest9x";
+    const created = [];
+
+    try {
+      for (const email of [emailA, emailB]) {
+        const { data, error } = await admin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { full_name: email.startsWith("smoke.a") ? "Cliente A" : "Cliente B" },
+        });
+        if (error) throw error;
+        created.push(data.user.id);
+      }
+
+      const a = await clientAs(url, anon, emailA, password);
+      const b = await clientAs(url, anon, emailB, password);
+      record("S-AUTH-03", Boolean(a.session && b.session), "login A e B ok");
+
+      const { error: profileErr } = await a.sb.from("profiles").upsert({
+        id: a.user.id,
+        full_name: "Cliente A Smoke",
+        phone: "+5591988887777",
+      });
+      record("S-PROF-01", !profileErr, profileErr?.message || "perfil A salvo");
+
+      const monthKey = "2098-06";
+      const { data: bill, error: billErr } = await a.sb
+        .from("bills")
+        .upsert({
+          user_id: a.user.id,
+          month_key: monthKey,
+          previous_reading: 100,
+          current_reading: 150,
+          factor: 1,
+          rate: 1,
+          extras: 10,
+          consumption: 9999,
+          energy_cost: 9999,
+          total: 9999,
+          due_date: "2098-07-05",
+          status: "pending",
+        }, { onConflict: "user_id,month_key" })
+        .select("*")
+        .single();
+
+      const totalsOk = bill && Number(bill.consumption) === 50 && Number(bill.total) === 60;
+      record(
+        "S-BILL-01",
+        !billErr && totalsOk,
+        billErr ? billErr.message : `trigger consumption=${bill?.consumption} total=${bill?.total}`,
+      );
+
+      if (bill?.id) {
+        const { data: paid, error: paidErr } = await a.sb
+          .from("bills")
+          .update({ status: "paid" })
+          .eq("id", bill.id)
+          .select("*")
+          .single();
+        record("S-BILL-02", !paidErr && paid?.status === "paid", paidErr?.message || `status=${paid?.status}`);
+
+        const { data: stolen, error: stealErr } = await b.sb
+          .from("bills")
+          .select("*")
+          .eq("id", bill.id);
+        record(
+          "S-ISO-01",
+          (!stealErr && Array.isArray(stolen) && stolen.length === 0),
+          stealErr ? stealErr.message : `B leu ${stolen?.length || 0} fatura(s) de A`,
+        );
+
+        const { data: hacked, error: hackErr } = await b.sb
+          .from("bills")
+          .update({ status: "pending" })
+          .eq("id", bill.id)
+          .select("*");
+        record(
+          "S-ISO-02",
+          (!hackErr && (!hacked || hacked.length === 0)),
+          hackErr ? hackErr.message : `B alterou ${hacked?.length || 0} fatura(s) de A`,
+        );
+
+        const { error: delErr } = await b.sb.from("bills").delete().eq("id", bill.id);
+        const { data: stillThere } = await a.sb.from("bills").select("id").eq("id", bill.id);
+        record(
+          "S-ISO-03",
+          Array.isArray(stillThere) && stillThere.length === 1,
+          delErr
+            ? `delete B: ${delErr.message}; A ainda vê ${stillThere?.length || 0}`
+            : `delete B ignorado; A ainda vê ${stillThere?.length || 0}`,
+        );
+
+        await a.sb.from("bills").delete().eq("id", bill.id);
+      }
+    } finally {
+      for (const id of created) {
+        await admin.auth.admin.deleteUser(id).catch(() => {});
+      }
+    }
+    return;
+  }
+
   if (!auth?.session) {
     record(
       "S-BILL-01",
       true,
-      "pulado: Confirm email ativo — sem sessão imediata (esperado em produção)",
+      "pulado: sem SERVICE_ROLE e Confirm email ativo (sem sessão imediata)",
     );
-    record("S-ISO-01", true, "pulado: isolamento A/B exige 2 sessões confirmadas");
+    record("S-ISO-01", true, "pulado: isolamento A/B exige SERVICE_ROLE ou 2 sessões");
     return;
   }
 
-  const userClient = createClient(auth.url, auth.anon, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await userClient.auth.setSession({
-    access_token: auth.session.access_token,
-    refresh_token: auth.session.refresh_token,
-  });
-
-  const monthKey = `2099-${String((Date.now() % 12) + 1).padStart(2, "0")}`;
-  const { error: profileErr } = await userClient.from("profiles").upsert({
-    id: auth.user.id,
-    full_name: "Smoke Tester",
-    phone: "+5591999999999",
-  });
-  record("S-PROF-01", !profileErr, profileErr?.message || "perfil salvo");
-
-  const payload = {
-    user_id: auth.user.id,
-    month_key: monthKey,
-    previous_reading: 100,
-    current_reading: 150,
-    factor: 1,
-    rate: 1,
-    extras: 10,
-    consumption: 9999,
-    energy_cost: 9999,
-    total: 9999,
-    due_date: "2099-12-05",
-    status: "pending",
-  };
-  const { data: bill, error: billErr } = await userClient
-    .from("bills")
-    .upsert(payload, { onConflict: "user_id,month_key" })
-    .select("*")
-    .single();
-
-  const totalsOk =
-    bill &&
-    Number(bill.consumption) === 50 &&
-    Number(bill.total) === 60;
-  record(
-    "S-BILL-01",
-    !billErr && totalsOk,
-    billErr
-      ? billErr.message
-      : `trigger recalculou consumption=${bill?.consumption} total=${bill?.total}`,
-  );
-
-  if (bill?.id) {
-    const { data: paid, error: paidErr } = await userClient
-      .from("bills")
-      .update({ status: "paid" })
-      .eq("id", bill.id)
-      .select("*")
-      .single();
-    record("S-BILL-02", !paidErr && paid?.status === "paid", paidErr?.message || `status=${paid?.status}`);
-
-    await userClient.from("bills").delete().eq("id", bill.id);
-  }
+  record("S-BILL-01", false, "fluxo autenticado sem service role não implementado neste caminho");
 }
 
 async function main() {
@@ -201,7 +267,7 @@ async function main() {
   testClientValidation();
   await testAnonRls(env);
   const auth = await testAuthPolicy(env);
-  await testAuthenticatedBillFlow(auth);
+  await testAuthenticatedBillFlow(env, auth);
 
   const failed = results.filter((r) => r.status === "REPROVADO");
   console.log(`\nTotal: ${results.length} | Aprovados: ${results.length - failed.length} | Reprovados: ${failed.length}`);

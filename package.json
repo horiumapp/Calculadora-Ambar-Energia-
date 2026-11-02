@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:security": "node scripts/security-pentest.mjs",
+    "test:smoke": "node scripts/smoke-test.mjs",
     "audit:deps": "npm audit"
   },
   "dependencies": {
