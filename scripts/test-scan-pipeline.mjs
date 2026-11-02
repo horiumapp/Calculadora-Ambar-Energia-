@@ -64,8 +64,9 @@ function processRegion(raw, y0, y1, { scale = 2, harden = true, thicken = 1 } = 
 const regions = [
   { label: "header", y0: 0.03, y1: 0.18, harden: false, thicken: 0, scale: 2 },
   { label: "headerBin", y0: 0.03, y1: 0.18, harden: true, thicken: 1, scale: 2.2 },
-  { label: "readings", y0: 0.55, y1: 0.78, harden: true, thicken: 2, scale: 2.2 },
-  { label: "readingsSoft", y0: 0.55, y1: 0.78, harden: false, thicken: 1, scale: 2 },
+  { label: "readings", y0: 0.55, y1: 0.78, harden: true, thicken: 1, scale: 2.5 },
+  { label: "readingsSoft", y0: 0.55, y1: 0.78, harden: false, thicken: 0, scale: 2.2 },
+  { label: "readingsLine", y0: 0.58, y1: 0.72, harden: true, thicken: 1, scale: 3 },
   { label: "cosip", y0: 0.68, y1: 0.92, harden: true, thicken: 1, scale: 2 },
 ];
 

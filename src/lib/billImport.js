@@ -204,8 +204,9 @@ async function recognizePasses(baseCanvas, worker, onProgress) {
     { label: "página", y0: 0, y1: 1, hardBin: false, thicken: 1, scale: 1, psm: PSM.AUTO },
     { label: "cabeçalho", y0: 0.03, y1: 0.18, hardBin: false, thicken: 0, scale: 2, psm: PSM.SINGLE_BLOCK },
     { label: "cabeçalho nítido", y0: 0.03, y1: 0.18, hardBin: true, thicken: 1, scale: 2.2, psm: PSM.SINGLE_BLOCK },
-    { label: "leituras", y0: 0.55, y1: 0.78, hardBin: true, thicken: 2, scale: 2.2, psm: PSM.SINGLE_BLOCK },
-    { label: "leituras soft", y0: 0.55, y1: 0.78, hardBin: false, thicken: 1, scale: 2, psm: PSM.SPARSE_TEXT },
+    { label: "leituras", y0: 0.55, y1: 0.78, hardBin: true, thicken: 1, scale: 2.5, psm: PSM.SINGLE_BLOCK },
+    { label: "leituras soft", y0: 0.55, y1: 0.78, hardBin: false, thicken: 0, scale: 2.2, psm: PSM.SPARSE_TEXT },
+    { label: "leituras dígitos", y0: 0.58, y1: 0.72, hardBin: true, thicken: 1, scale: 3, psm: PSM.SINGLE_LINE },
     { label: "COSIP", y0: 0.68, y1: 0.92, hardBin: true, thicken: 1, scale: 2, psm: PSM.SINGLE_BLOCK },
   ];
 

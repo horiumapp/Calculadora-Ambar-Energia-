@@ -153,18 +153,30 @@ function extractMonthKey(text) {
 }
 
 function collectMeterCandidates(text) {
-  const normalized = normalizeText(text);
+  // Remove datas e anos soltos para não virar "leitura" (ex.: 05/11/2026 → 2026).
+  const normalized = normalizeText(text)
+    .replace(/\b\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{2,4}\b/g, " ")
+    .replace(/\b20\d{2}\b/g, " ");
   const seen = new Set();
   const out = [];
   for (const match of normalized.matchAll(/\b(\d{4,6})\b/g)) {
     const num = parseBrNumber(match[1]);
     if (num == null || looksLikeYear(num) || num < 1000) continue;
-    // Evita medidor/UC típicos se aparecerem isolados demais; ainda entram no pareamento.
     if (seen.has(num)) continue;
     seen.add(num);
     out.push(num);
   }
   return out;
+}
+
+/** Números na linha En Ativa Total, na ordem da fatura. */
+function extractAtivaNumbers(text) {
+  const normalized = normalizeText(text);
+  const line = normalized.match(/en\s*[a-z]{0,12}\s*total([^\n]{0,160})/i);
+  if (!line) return [];
+  return [...line[1].matchAll(/\b(\d{1,6}(?:[.,]\d{1,3})?)\b/g)]
+    .map((m) => parseBrNumber(m[1]))
+    .filter((n) => n != null && !looksLikeYear(n));
 }
 
 function pickReadingPair(candidates, consumptionHint) {
@@ -206,22 +218,68 @@ function extractReadings(text, consumptionHint = null) {
   let current = null;
   let source = null;
 
-  // Linha Amazonas (mesmo com OCR ruído): En Ativa Total 14978 14645 ...
-  const compact = normalized.match(
-    /en\s*[a-z]{0,12}\s*total[^\d]{0,30}(\d{4,6})\s+(\d{4,6})/i,
-  );
-  if (compact) {
-    current = parseBrNumber(compact[1]);
-    previous = parseBrNumber(compact[2]);
+  // Ordem Amazonas: En Ativa Total | atual | anterior | const | res | medido | fat
+  const ativaNums = extractAtivaNumbers(text);
+  if (ativaNums.length) {
+    const ints = ativaNums.filter((n) => Number.isInteger(n));
+    const big = ints.filter((n) => String(n).length >= 5);
+    const first = ints[0] ?? null;
+    const second = ints[1] ?? null;
+    const kwhFromAtiva = ints.find((n) => n >= 50 && n <= 5000 && String(n).length <= 4) ?? null;
+    const kwh = consumptionHint ?? kwhFromAtiva;
+
     if (
-      current != null && previous != null
-      && !looksLikeYear(current) && !looksLikeYear(previous)
-      && current >= previous
+      first != null && second != null
+      && String(first).length >= 4 && String(second).length >= 4
+      && !looksLikeYear(first) && !looksLikeYear(second)
     ) {
-      source = "ativa-total";
-    } else {
-      previous = null;
-      current = null;
+      if (first >= second && (kwh == null || Math.abs(first - second - kwh) <= 8)) {
+        current = first;
+        previous = second;
+        source = "ativa-ordered";
+      } else if (kwh != null && String(second).length >= 5) {
+        // Atual OCR veio errada (14378 vs 14978); confia na anterior + consumo.
+        previous = second;
+        current = second + kwh;
+        source = "ativa-prev-plus-kwh";
+      } else if (kwh != null && String(first).length >= 5 && first > kwh) {
+        current = first;
+        previous = first - kwh;
+        source = "ativa-curr-minus-kwh";
+      }
+    } else if (big.length === 1 && kwh != null) {
+      if (first != null && first < big[0] && String(first).length < 5) {
+        previous = big[0];
+        current = big[0] + kwh;
+        source = "ativa-prev-plus-kwh";
+      } else {
+        current = big[0];
+        previous = big[0] - kwh;
+        source = "ativa-curr-minus-kwh";
+      }
+    } else if (big.length === 1) {
+      current = big[0];
+      source = "ativa-current-only";
+    }
+  }
+
+  // Linha Amazonas (mesmo com OCR ruído): En Ativa Total 14978 14645 ...
+  if (previous == null || current == null) {
+    const compact = normalized.match(
+      /en\s*[a-z]{0,12}\s*total[^\d]{0,30}(\d{4,6})\s+(\d{4,6})/i,
+    );
+    if (compact) {
+      const cur = parseBrNumber(compact[1]);
+      const prev = parseBrNumber(compact[2]);
+      if (
+        cur != null && prev != null
+        && !looksLikeYear(cur) && !looksLikeYear(prev)
+        && cur >= prev
+      ) {
+        current = cur;
+        previous = prev;
+        source = "ativa-total";
+      }
     }
   }
 
@@ -537,7 +595,18 @@ function extractConsumptionHint(text) {
     const value = parseBrNumber(labeled[1]);
     if (value != null && value > 0 && value < 100000) return value;
   }
-  // Fim da linha En Ativa: ... 0 333 333 (medido/faturado).
+  // Medido/faturado no fim da linha En Ativa (… 0 333 333).
+  const ativaNums = extractAtivaNumbers(text).filter((n) => Number.isInteger(n));
+  if (ativaNums.length >= 2) {
+    const a = ativaNums[ativaNums.length - 2];
+    const b = ativaNums[ativaNums.length - 1];
+    if (a >= 30 && a <= 8000 && b >= 30 && b <= 8000 && Math.abs(a - b) <= 5) {
+      return Math.max(a, b);
+    }
+  }
+  // Um único consumo 3 dígitos na linha (OCR cortou o segundo 333).
+  const ativaKwh = ativaNums.find((n) => n >= 50 && n <= 5000 && String(n).length === 3);
+  if (ativaKwh != null) return ativaKwh;
   const ativaTail = normalized.match(
     /en\s*[a-z]{0,12}\s*total[\s\S]{0,80}?\b(\d{2,4})\s+(\d{2,4})\s*$/im,
   );
@@ -645,14 +714,15 @@ function completeReadings(raw) {
       raw.current = expectedCurrent;
     }
   }
-  // Leituras ok sem consumo → consumo = atual - anterior
+  // Leituras ok sem consumo → consumo = atual - anterior (faixa residencial).
   if (
     raw.consumptionHint == null
     && raw.previous != null
     && raw.current != null
     && raw.current > raw.previous
   ) {
-    raw.consumptionHint = (raw.current - raw.previous) * factor;
+    const delta = (raw.current - raw.previous) * factor;
+    if (delta >= 30 && delta <= 8000) raw.consumptionHint = delta;
   }
 }
 
