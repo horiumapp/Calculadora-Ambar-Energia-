@@ -1,9 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
-};
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "";
+const ALERT_COOLDOWN_HOURS = 8;
+const MIN_DAYS_AHEAD = 1;
+const MAX_DAYS_AHEAD = 60;
+const MAX_BODY_BYTES = 4_096;
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_REQUESTS = 10;
 
 type BillRow = {
   id: string;
@@ -14,7 +17,75 @@ type BillRow = {
   status: string;
 };
 
-const ALERT_COOLDOWN_HOURS = 8;
+type RateEntry = { count: number; resetAt: number };
+const rateBuckets = new Map<string, RateEntry>();
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-cron-secret",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+  if (ALLOWED_ORIGIN && origin === ALLOWED_ORIGIN) {
+    headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN;
+  } else if (!ALLOWED_ORIGIN) {
+    // Cron/server-to-server: sem CORS permissivo.
+    headers["Access-Control-Allow-Origin"] = "null";
+  }
+  return headers;
+}
+
+function jsonResponse(
+  status: number,
+  body: Record<string, unknown>,
+  origin: string | null,
+) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders(origin),
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const aBytes = enc.encode(a);
+  const bBytes = enc.encode(b);
+  const len = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length === bBytes.length ? 0 : 1;
+  for (let i = 0; i < len; i++) {
+    const av = i < aBytes.length ? aBytes[i] : 0;
+    const bv = i < bBytes.length ? bBytes[i] : 0;
+    diff |= av ^ bv;
+  }
+  return diff === 0;
+}
+
+function clientKey(req: Request): string {
+  return (
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function allowRequest(key: string): boolean {
+  const now = Date.now();
+  const entry = rateBuckets.get(key);
+  if (!entry || now >= entry.resetAt) {
+    rateBuckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= RATE_MAX_REQUESTS) return false;
+  entry.count += 1;
+  return true;
+}
 
 function formatMonthShort(monthKey: string) {
   const months = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
@@ -30,6 +101,10 @@ function formatMoney(value: number) {
 function formatDateBr(isoDate: string) {
   const [y, m, d] = isoDate.split("-");
   return `${d}/${m}/${y}`;
+}
+
+function cooldownBucket(nowMs = Date.now()): number {
+  return Math.floor(nowMs / (ALERT_COOLDOWN_HOURS * 3600 * 1000));
 }
 
 async function sendResendEmail(to: string, subject: string, text: string) {
@@ -59,30 +134,60 @@ async function sendResendEmail(to: string, subject: string, text: string) {
 }
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get("origin");
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders(origin) });
+  }
+
+  if (req.method !== "POST") {
+    return jsonResponse(405, { error: "Método não permitido." }, origin);
+  }
+
+  if (!allowRequest(clientKey(req))) {
+    return jsonResponse(429, { error: "Muitas requisições. Tente novamente mais tarde." }, origin);
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const admin = createClient(supabaseUrl, serviceRole);
-
-    const cronSecret = req.headers.get("x-cron-secret");
-    const expectedCron = Deno.env.get("CRON_SECRET");
-    const isCron = Boolean(expectedCron && cronSecret === expectedCron);
-
-    if (!isCron) {
-      return new Response(JSON.stringify({
-        error: "Alertas são automáticos. Use o cron com header x-cron-secret.",
-      }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const expectedCron = Deno.env.get("CRON_SECRET") || "";
+    const cronSecret = req.headers.get("x-cron-secret") || "";
+    if (!expectedCron || !timingSafeEqual(cronSecret, expectedCron)) {
+      return jsonResponse(403, { error: "Não autorizado." }, origin);
     }
 
-    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-    const daysAhead = Number(body?.days_ahead ?? 30);
+    const raw = await req.arrayBuffer();
+    if (raw.byteLength > MAX_BODY_BYTES) {
+      return jsonResponse(413, { error: "Corpo da requisição muito grande." }, origin);
+    }
+
+    let body: Record<string, unknown> = {};
+    if (raw.byteLength > 0) {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(raw));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          body = parsed as Record<string, unknown>;
+        } else {
+          return jsonResponse(400, { error: "JSON inválido." }, origin);
+        }
+      } catch {
+        return jsonResponse(400, { error: "JSON inválido." }, origin);
+      }
+    }
+
+    const daysAheadRaw = Number(body.days_ahead ?? 30);
+    if (!Number.isFinite(daysAheadRaw)) {
+      return jsonResponse(400, { error: "days_ahead inválido." }, origin);
+    }
+    const daysAhead = Math.min(MAX_DAYS_AHEAD, Math.max(MIN_DAYS_AHEAD, Math.trunc(daysAheadRaw)));
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRole) {
+      console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      return jsonResponse(500, { error: "Configuração incompleta." }, origin);
+    }
+
+    const admin = createClient(supabaseUrl, serviceRole);
 
     await admin.rpc("refresh_overdue_bills");
 
@@ -92,6 +197,7 @@ Deno.serve(async (req) => {
     const todayIso = today.toISOString().slice(0, 10);
     const limitIso = limit.toISOString().slice(0, 10);
     const cooldownIso = new Date(today.getTime() - ALERT_COOLDOWN_HOURS * 3600 * 1000).toISOString();
+    const bucket = cooldownBucket(today.getTime());
 
     const { data: bills, error: billsError } = await admin
       .from("bills")
@@ -99,15 +205,20 @@ Deno.serve(async (req) => {
       .in("status", ["pending", "overdue"])
       .lte("due_date", limitIso);
 
-    if (billsError) throw billsError;
+    if (billsError) {
+      console.error("bills query failed", billsError.message);
+      return jsonResponse(500, { error: "Falha ao processar alertas." }, origin);
+    }
 
     const targets = (bills || []) as BillRow[];
-    const results: Array<Record<string, unknown>> = [];
+    let sent = 0;
+    let skipped = 0;
+    let failed = 0;
 
     for (const bill of targets) {
       const { data: userData, error: userError } = await admin.auth.admin.getUserById(bill.user_id);
       if (userError || !userData?.user?.email) {
-        results.push({ bill_id: bill.id, skipped: true, reason: "Cliente sem e-mail." });
+        skipped += 1;
         continue;
       }
 
@@ -126,11 +237,7 @@ Deno.serve(async (req) => {
         .limit(1);
 
       if (recent && recent.length > 0) {
-        results.push({
-          bill_id: bill.id,
-          skipped: true,
-          reason: `Já alertado nas últimas ${ALERT_COOLDOWN_HOURS}h.`,
-        });
+        skipped += 1;
         continue;
       }
 
@@ -149,39 +256,43 @@ Deno.serve(async (req) => {
 
       try {
         const messageId = await sendResendEmail(email, subject, text);
+        const cooldownKey = `${bill.id}:${bucket}`;
         const { error: logError } = await admin.from("alert_logs").insert({
           user_id: bill.user_id,
           bill_id: bill.id,
           phone: email,
           message: text,
           provider_sid: messageId,
+          cooldown_key: cooldownKey,
         });
-        if (logError) throw logError;
-        results.push({ bill_id: bill.id, sent: true, email, channel: "email" });
+
+        if (logError) {
+          // Concorrência: outro worker já registrou o alerta desta janela.
+          if (String(logError.code) === "23505" || /duplicate|unique/i.test(logError.message || "")) {
+            skipped += 1;
+            continue;
+          }
+          throw logError;
+        }
+        sent += 1;
       } catch (sendError) {
-        results.push({
-          bill_id: bill.id,
-          sent: false,
-          email,
-          reason: sendError instanceof Error ? sendError.message : "Falha no e-mail",
-        });
+        failed += 1;
+        console.error("alert send failed", bill.id, sendError instanceof Error ? sendError.message : "error");
       }
     }
 
-    return new Response(JSON.stringify({
+    return jsonResponse(200, {
       ok: true,
       channel: "email",
       cooldown_hours: ALERT_COOLDOWN_HOURS,
-      count: results.length,
-      results,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      days_ahead: daysAhead,
+      processed: targets.length,
+      sent,
+      skipped,
+      failed,
+    }, origin);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro interno";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("send-due-alerts fatal", error instanceof Error ? error.message : "unknown");
+    return jsonResponse(500, { error: "Erro interno." }, origin);
   }
 });
