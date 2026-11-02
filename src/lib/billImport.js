@@ -181,6 +181,20 @@ function cropCanvasRegion(sourceCanvas, y0, y1) {
   return canvas;
 }
 
+async function withQuietTesseractLogs(run) {
+  // O WASM do Tesseract imprime "Detected N diacritics" no console — não é erro.
+  const originalLog = console.log;
+  console.log = (...args) => {
+    if (typeof args[0] === "string" && /diacritics/i.test(args[0])) return;
+    originalLog.apply(console, args);
+  };
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 async function recognizeCanvas(worker, sourceCanvas, {
   hardBin = false,
   thicken = 0,
@@ -193,7 +207,7 @@ async function recognizeCanvas(worker, sourceCanvas, {
     preserve_interword_spaces: "1",
     user_defined_dpi: "300",
   });
-  const result = await worker.recognize(canvas);
+  const result = await withQuietTesseractLogs(() => worker.recognize(canvas));
   return String(result?.data?.text || "").trim();
 }
 
