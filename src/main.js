@@ -2,6 +2,7 @@ import "./styles.css";
 import { supabase, isSupabaseConfigured } from "./lib/supabase.js";
 import { fetchProfile, saveProfile } from "./lib/profile.js";
 import { initCalculator, reloadBills } from "./calculator.js";
+import { BILL_LIMITS, sanitizeAuthError } from "./lib/validation.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -9,6 +10,7 @@ const authView = $("auth-view");
 const appView = $("app-view");
 const configView = $("config-view");
 const authError = $("auth-error");
+const authOk = $("auth-ok");
 const profileError = $("profile-error");
 const profileOk = $("profile-ok");
 
@@ -23,12 +25,25 @@ function showView(view) {
 
 function setAuthMode(mode) {
   const isLogin = mode === "login";
-  $("auth-title").textContent = isLogin ? "Entrar na conta" : "Criar conta";
-  $("auth-submit").textContent = isLogin ? "Entrar" : "Cadastrar";
+  const isReset = mode === "reset";
+  $("auth-title").textContent = isReset
+    ? "Recuperar senha"
+    : isLogin
+      ? "Entrar na conta"
+      : "Criar conta";
+  $("auth-submit").textContent = isReset
+    ? "Enviar link"
+    : isLogin
+      ? "Entrar"
+      : "Cadastrar";
   $("auth-toggle").textContent = isLogin ? "Criar uma conta" : "Já tenho conta";
   $("auth-form").dataset.mode = mode;
-  $("auth-name-field").hidden = isLogin;
+  $("auth-name-field").hidden = !(!isLogin && !isReset);
+  $("auth-password-field").hidden = isReset;
+  $("auth-forgot").hidden = !isLogin;
+  $("auth-back-login").hidden = !isReset;
   authError.hidden = true;
+  if (authOk) authOk.hidden = true;
 }
 
 function isProfileComplete(profile) {
@@ -42,6 +57,11 @@ function setProfileEditorOpen(open) {
     profileError.hidden = true;
     profileOk.hidden = true;
   }
+}
+
+function resetClientState() {
+  currentUser = null;
+  calculatorReady = false;
 }
 
 async function refreshProfileUI(userId, { openEditor } = {}) {
@@ -89,16 +109,35 @@ function wireAuth() {
     setAuthMode(next);
   });
 
+  $("auth-forgot").addEventListener("click", () => setAuthMode("reset"));
+  $("auth-back-login").addEventListener("click", () => setAuthMode("login"));
+
   $("auth-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     authError.hidden = true;
+    if (authOk) authOk.hidden = true;
+
     const email = $("auth-email").value.trim();
     const password = $("auth-password").value;
     const fullName = $("auth-name").value.trim();
     const mode = $("auth-form").dataset.mode;
 
     try {
+      if (mode === "reset") {
+        const redirectTo = `${window.location.origin}/`;
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) throw error;
+        if (authOk) {
+          authOk.textContent = "Se o e-mail existir, enviaremos instruções de recuperação.";
+          authOk.hidden = false;
+        }
+        return;
+      }
+
       if (mode === "signup") {
+        if (password.length < BILL_LIMITS.minPasswordLength) {
+          throw new Error(`Use uma senha com pelo menos ${BILL_LIMITS.minPasswordLength} caracteres.`);
+        }
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -106,7 +145,7 @@ function wireAuth() {
         });
         if (error) throw error;
         if (data.session) {
-          if (fullName) await saveProfile(data.user.id, { fullName, phone: "" });
+          if (fullName) await saveProfile(data.user.id, { fullName, phone: "" }).catch(() => {});
           await enterApp(data.session);
         } else {
           authError.textContent = "Conta criada. Confirme o e-mail (se exigido) e faça login.";
@@ -119,14 +158,19 @@ function wireAuth() {
         await enterApp(data.session);
       }
     } catch (error) {
-      authError.textContent = error.message || "Falha na autenticação.";
+      const isPasswordPolicy =
+        mode === "signup" &&
+        String(error?.message || "").includes(`${BILL_LIMITS.minPasswordLength} caracteres`);
+      authError.textContent = isPasswordPolicy
+        ? error.message
+        : sanitizeAuthError(error, mode);
       authError.hidden = false;
     }
   });
 
   $("logout-btn").addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    currentUser = null;
+    await supabase.auth.signOut({ scope: "local" });
+    resetClientState();
     showView("auth");
     setAuthMode("login");
   });
@@ -178,11 +222,15 @@ async function boot() {
 
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === "SIGNED_OUT") {
-      currentUser = null;
+      resetClientState();
       showView("auth");
     }
     if (event === "SIGNED_IN" && session) {
       await enterApp(session);
+    }
+    if (event === "TOKEN_REFRESHED" && !session) {
+      resetClientState();
+      showView("auth");
     }
   });
 }

@@ -3,6 +3,7 @@ import {
   dueDateFromMonth, formatDateBr, shiftMonthKey, statusLabel, daysUntil
 } from "./lib/format.js";
 import { fetchBills, upsertBill, setBillPaid, clearBills } from "./lib/bills.js";
+import { computeBillTotals, validateBillInputs } from "./lib/validation.js";
 
 const $ = (id) => document.getElementById(id);
 const number = (id) => Number($(id).value);
@@ -35,14 +36,21 @@ function calculate() {
   const extras = number("extras");
   const month = parseMonth($("bill-month-input").value);
   if (!month) { alert("Informe o mês da conta."); return null; }
-  if (![previous, current, factor, rate, extras].every(Number.isFinite) || factor <= 0 || rate < 0 || extras < 0) {
-    alert("Confira os valores informados."); return null;
-  }
-  if (current < previous) { alert("A leitura atual não pode ser menor que a leitura anterior."); return null; }
 
-  const consumption = (current - previous) * factor;
-  const energy = consumption * rate;
-  const total = energy + extras;
+  const errors = validateBillInputs({
+    previous, current, factor, rate, extras, monthKey: month.key,
+  });
+  if (errors.length) { alert(errors[0]); return null; }
+
+  let totals;
+  try {
+    totals = computeBillTotals({ previous, current, factor, rate, extras });
+  } catch (error) {
+    alert(error.message || "Não foi possível calcular a conta.");
+    return null;
+  }
+
+  const { consumption, energy, total } = totals;
   const dueDate = dueDateFromMonth(month.key);
   const existing = billsCache.find((item) => item.monthKey === month.key);
 
