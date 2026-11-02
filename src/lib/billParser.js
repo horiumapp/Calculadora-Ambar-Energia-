@@ -1,7 +1,7 @@
 const MONTH_NAMES = {
   janeiro: 1, jan: 1,
   fevereiro: 2, fev: 2,
-  marco: 3, março: 3, mar: 3,
+  marco: 3, mar: 3,
   abril: 4, abr: 4,
   maio: 5, mai: 5,
   junho: 6, jun: 6,
@@ -25,10 +25,8 @@ function normalizeText(text) {
 
 function parseBrNumber(raw) {
   if (raw == null) return null;
-  let value = String(raw).trim();
-  if (!value) return null;
-  value = value.replace(/[^\d.,-]/g, "");
-  if (!value) return null;
+  let value = String(raw).trim().replace(/[^\d.,-]/g, "");
+  if (!value || value === "-" || value === "." || value === ",") return null;
 
   const hasComma = value.includes(",");
   const hasDot = value.includes(".");
@@ -46,161 +44,240 @@ function parseBrNumber(raw) {
   return Number.isFinite(num) ? num : null;
 }
 
+function currentYear() {
+  return new Date().getFullYear();
+}
+
+function isPlausibleBillYear(year) {
+  const y = Number(year);
+  const now = currentYear();
+  return y >= now - 2 && y <= now + 1;
+}
+
 function toMonthKey(year, month) {
   if (!year || !month || month < 1 || month > 12) return null;
-  const y = Number(year);
-  if (y < 2000 || y > 2100) return null;
-  return `${y}-${String(month).padStart(2, "0")}`;
+  if (!isPlausibleBillYear(year)) return null;
+  return `${Number(year)}-${String(month).padStart(2, "0")}`;
+}
+
+function looksLikeYear(num) {
+  return Number.isInteger(num) && num >= 2000 && num <= 2100;
+}
+
+function extractNumberTokens(line) {
+  return String(line).match(
+    /-?\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|-?\d+[.,]\d{2,6}|-?\d{4,}|-?\d+/g,
+  ) || [];
 }
 
 function extractMonthKey(text) {
   const normalized = normalizeText(text).toLowerCase();
 
-  const refMatch = normalized.match(
-    /(?:referencia|mes\s*\/?\s*ano|conta\s*mes|periodo)[^\n]{0,40}?((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*)[\/\-\s]+(\d{4}|\d{2})/i,
-  );
-  if (refMatch) {
-    const month = MONTH_NAMES[refMatch[1].slice(0, 3)] || MONTH_NAMES[refMatch[1]];
-    let year = Number(refMatch[2]);
-    if (year < 100) year += 2000;
-    const key = toMonthKey(year, month);
-    if (key) return key;
-  }
-
-  const slashMatch = normalized.match(
+  const patterns = [
+    /(?:referencia|mes\s*\/?\s*ano|conta\s*mes|periodo|ref\.?)[^\n]{0,48}?((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*)[\/\-\s.]+(\d{4}|\d{2})/i,
     /\b((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*)[\/\-](\d{4}|\d{2})\b/i,
-  );
-  if (slashMatch) {
-    const month = MONTH_NAMES[slashMatch[1].slice(0, 3)] || MONTH_NAMES[slashMatch[1]];
-    let year = Number(slashMatch[2]);
+  ];
+
+  for (const re of patterns) {
+    const match = normalized.match(re);
+    if (!match) continue;
+    const monthToken = match[1].slice(0, 3);
+    const month = MONTH_NAMES[monthToken] || MONTH_NAMES[match[1]];
+    let year = Number(match[2]);
     if (year < 100) year += 2000;
     const key = toMonthKey(year, month);
     if (key) return key;
   }
 
-  const numeric = normalized.match(/\b(0?[1-9]|1[0-2])[\/\-](\d{4})\b/);
-  if (numeric) return toMonthKey(numeric[2], Number(numeric[1]));
-
-  const iso = normalized.match(/\b(20\d{2})[\/\-](0[1-9]|1[0-2])\b/);
-  if (iso) return toMonthKey(iso[1], Number(iso[2]));
+  const labeledNumeric = normalized.match(
+    /(?:referencia|mes\s*\/?\s*ano|conta\s*mes|periodo)[^\n]{0,40}?\b(0?[1-9]|1[0-2])[\/\-](\d{4})\b/i,
+  );
+  if (labeledNumeric) {
+    const key = toMonthKey(labeledNumeric[2], Number(labeledNumeric[1]));
+    if (key) return key;
+  }
 
   return null;
 }
 
-function extractNumberTokens(line) {
-  const matches = String(line).match(
-    /-?\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|-?\d+[.,]\d+|-?\d+/g,
-  ) || [];
-  // Prefer tokens longos/completos para evitar cortar 14645 em 146.
-  return [...matches].sort((a, b) => b.length - a.length);
-}
-
-function findNumberNear(labelRe, text, { min = 0, max = Infinity, decimalsOk = true } = {}) {
+function findCandidatesNear(labelRe, text, filterFn) {
   const lines = text.split(/\n+/);
+  const found = [];
+
   for (let i = 0; i < lines.length; i++) {
     const line = normalizeText(lines[i]);
     if (!labelRe.test(line)) continue;
 
-    const scanLines = [line];
+    const scan = [line];
     for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
-      scanLines.push(normalizeText(lines[j]));
+      scan.push(normalizeText(lines[j]));
     }
 
-    for (const candidateLine of scanLines) {
-      const tokens = extractNumberTokens(candidateLine);
-      for (const token of tokens) {
+    for (const candidateLine of scan) {
+      for (const token of extractNumberTokens(candidateLine)) {
         const num = parseBrNumber(token);
         if (num == null) continue;
-        if (!decimalsOk && !Number.isInteger(num)) continue;
-        if (num >= min && num <= max) return num;
+        if (filterFn && !filterFn(num, token, candidateLine)) continue;
+        found.push({ num, token, line: candidateLine });
       }
     }
   }
-  return null;
+
+  return found;
 }
 
 function extractReadings(text) {
-  const previous = findNumberNear(
-    /leitura\s+anterior|anterior\s+do\s+medidor|\banterior\b/i,
+  const readingFilter = (num, token) => {
+    if (!Number.isFinite(num) || num < 0 || num > 1_000_000_000) return false;
+    // Anos (ex.: 2026) quase nunca são leitura de medidor isolada.
+    if (looksLikeYear(num)) return false;
+    // Leituras costumam ter pelo menos 3 dígitos (ou milhar com ponto).
+    const digits = String(token).replace(/\D/g, "");
+    return digits.length >= 3;
+  };
+
+  const previousHits = findCandidatesNear(
+    /leitura\s+anterior|leitura\s+ant\.?|anterior\s+do\s+medidor/i,
     text,
-    { min: 0, max: 1_000_000_000 },
+    readingFilter,
   );
-  const current = findNumberNear(
-    /leitura\s+atual|atual\s+do\s+medidor|\batual\b|leitura\s+do\s+mes/i,
+  const currentHits = findCandidatesNear(
+    /leitura\s+atual|leitura\s+do\s+mes|atual\s+do\s+medidor/i,
     text,
-    { min: 0, max: 1_000_000_000 },
+    readingFilter,
   );
 
-  if (previous != null && current != null) return { previous, current };
+  // Evita o rótulo genérico "anterior/atual" sozinho — pega demais lixo do OCR.
+  let previous = previousHits[0]?.num ?? null;
+  let current = currentHits[0]?.num ?? null;
 
-  const pair = text.match(
-    /(?:leituras?|medidor)[^\d]{0,40}(\d{3,9})[^\d]{1,20}(\d{3,9})/i,
-  );
-  if (pair) {
-    const a = parseBrNumber(pair[1]);
-    const b = parseBrNumber(pair[2]);
-    if (a != null && b != null && b >= a) return { previous: a, current: b };
+  if (previous == null || current == null) {
+    const pair = normalizeText(text).match(
+      /leitura\s+anterior[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{3,9})[^\d]{0,40}leitura\s+atual[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{3,9})/i,
+    );
+    if (pair) {
+      previous = parseBrNumber(pair[1]);
+      current = parseBrNumber(pair[2]);
+    }
+  }
+
+  if (previous == null || current == null) {
+    const table = normalizeText(text).match(
+      /(?:anterior|atual).{0,80}?(\d{1,3}(?:[.\s]\d{3})+|\d{4,9}).{0,40}?(\d{1,3}(?:[.\s]\d{3})+|\d{4,9})/i,
+    );
+    if (table) {
+      const a = parseBrNumber(table[1]);
+      const b = parseBrNumber(table[2]);
+      if (a != null && b != null && !looksLikeYear(a) && !looksLikeYear(b) && b >= a) {
+        previous = previous ?? a;
+        current = current ?? b;
+      }
+    }
+  }
+
+  if (previous != null && current != null && current < previous) {
+    return { previous: null, current: null };
   }
 
   return { previous, current };
 }
 
 function extractRate(text) {
-  const labeled = findNumberNear(
-    /tarifa|te\s*\/?\s*tusd|preco\s*unit|r\$\s*\/\s*kwh|valor\s*unitario/i,
+  const rateFilter = (num, token) => {
+    if (!(num > 0.05 && num < 5)) return false;
+    // Tarifa BR quase sempre tem casas decimais (ex.: 0,875710). Inteiro 2/5 é lixo de OCR.
+    return /[.,]\d{2,}/.test(token);
+  };
+
+  const hits = findCandidatesNear(
+    /(?:tarifa|preco\s*unit(?:ario)?|valor\s*unitario|te\b|tusd|r\$\s*\/\s*kwh)/i,
     text,
-    { min: 0.01, max: 100 },
+    rateFilter,
   );
-  if (labeled != null) return labeled;
+  if (hits.length) return hits[0].num;
 
   const match = normalizeText(text).match(
-    /(?:r\$\s*)?(\d+[.,]\d{4,6})\s*(?:\/\s*)?kwh/i,
+    /(\d+[.,]\d{4,6})\s*(?:\/\s*)?kwh/i,
   );
   return match ? parseBrNumber(match[1]) : null;
 }
 
 function extractExtras(text) {
-  const cosip = findNumberNear(
-    /cosip|cip\b|iluminacao\s+publica|contrib(?:uicao)?\s+.*ilumin/i,
+  const hits = findCandidatesNear(
+    /cosip|cip\b|iluminacao\s+publica|contrib(?:uicao)?[^\n]{0,20}ilumin/i,
     text,
-    { min: 0, max: 100_000 },
+    (num, token) => {
+      if (!(num >= 0 && num <= 5000)) return false;
+      // Preferir valores monetários com decimais; aceitar inteiro só se >= 5.
+      return /[.,]\d{2}/.test(token) || num >= 5;
+    },
   );
-  return cosip;
+  return hits[0]?.num ?? null;
 }
 
 function extractFactor(text) {
-  const factor = findNumberNear(
-    /constante|multiplicador|fator\s+do\s+medidor/i,
+  const hits = findCandidatesNear(
+    /constante(?:\s+do\s+medidor)?|multiplicador|fator\s+(?:do\s+)?medidor/i,
     text,
-    { min: 0.001, max: 1000 },
+    (num) => num > 0 && num <= 1000,
   );
-  return factor == null ? 1 : factor;
+  // Só preenche se achou rótulo explícito. Senão null (UI pode assumir 1 depois).
+  return hits[0]?.num ?? null;
+}
+
+function sanitizeParsed(parsed) {
+  const next = { ...parsed };
+
+  if (next.monthKey) {
+    const year = Number(String(next.monthKey).slice(0, 4));
+    if (!isPlausibleBillYear(year)) next.monthKey = null;
+  }
+
+  if (looksLikeYear(next.previous)) next.previous = null;
+  if (looksLikeYear(next.current)) next.current = null;
+
+  if (next.previous != null && next.current != null && next.current < next.previous) {
+    next.previous = null;
+    next.current = null;
+  }
+
+  if (next.rate != null && (!(next.rate > 0.05 && next.rate < 5) || Number.isInteger(next.rate))) {
+    next.rate = null;
+  }
+
+  if (next.factor != null && (!(next.factor > 0 && next.factor <= 1000))) {
+    next.factor = null;
+  }
+
+  if (next.extras != null && (!(next.extras >= 0 && next.extras <= 5000))) {
+    next.extras = null;
+  }
+
+  return next;
 }
 
 /**
  * Extrai campos úteis de texto OCR de fatura de energia (BR).
- * @param {string} ocrText
- * @returns {{ monthKey: string|null, previous: number|null, current: number|null, factor: number|null, rate: number|null, extras: number|null, confidence: number, rawPreview: string }}
  */
 export function parseBillText(ocrText) {
   const text = String(ocrText || "");
-  const monthKey = extractMonthKey(text);
-  const { previous, current } = extractReadings(text);
-  const rate = extractRate(text);
-  const extras = extractExtras(text);
-  const factor = extractFactor(text);
+  const raw = {
+    monthKey: extractMonthKey(text),
+    ...extractReadings(text),
+    rate: extractRate(text),
+    extras: extractExtras(text),
+    factor: extractFactor(text),
+  };
 
-  const found = [monthKey, previous, current, rate, extras].filter((v) => v != null).length;
-  const confidence = found / 5;
+  const parsed = sanitizeParsed(raw);
+  const core = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate];
+  const found = core.filter((v) => v != null).length;
+  const confidence = found / core.length;
 
   return {
-    monthKey,
-    previous,
-    current,
-    factor,
-    rate,
-    extras,
+    ...parsed,
     confidence,
-    rawPreview: text.slice(0, 400),
+    warnings: [],
+    rawPreview: text.slice(0, 600),
   };
 }

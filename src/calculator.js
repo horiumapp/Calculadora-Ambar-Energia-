@@ -129,6 +129,11 @@ function clearFormFields({ keepMonth = true } = {}) {
     fields.hidden = true;
     fields.innerHTML = "";
   }
+  const preview = $("import-ocr-preview");
+  if (preview) {
+    preview.hidden = true;
+    preview.textContent = "";
+  }
   clearResultPanel();
   syncMonthLabels();
 }
@@ -189,28 +194,40 @@ function renderImportFields(parsed) {
   list.innerHTML = rows
     .map(([label, value]) => `<li><span>${label}</span><strong>${value}</strong></li>`)
     .join("");
+
+  const preview = $("import-ocr-preview");
+  if (preview) {
+    if (parsed.rawPreview) {
+      preview.hidden = false;
+      preview.textContent = parsed.rawPreview;
+    } else {
+      preview.hidden = true;
+      preview.textContent = "";
+    }
+  }
 }
 
 function applyImportedBill(parsed) {
-  const fromMonthKey = selectedMonthKey;
+  // Sempre parte do zero para não misturar lixo de tentativas anteriores.
+  clearFormFields({ keepMonth: false });
+
   if (parsed.monthKey) {
     $("bill-month-input").value = parsed.monthKey;
     selectedMonthKey = parsed.monthKey;
-    syncMonthLabels();
   }
 
-  const draft = {
-    previous: parsed.previous != null ? String(parsed.previous) : $("previous").value,
-    current: parsed.current != null ? String(parsed.current) : $("current").value,
-    factor: parsed.factor != null ? String(parsed.factor) : $("factor").value,
-    rate: parsed.rate != null ? String(parsed.rate) : $("rate").value,
-    extras: parsed.extras != null ? String(parsed.extras) : $("extras").value,
-  };
-  writeFormDraft(draft);
-  snapshotMonthDraft(selectedMonthKey || fromMonthKey);
+  writeFormDraft({
+    previous: parsed.previous != null ? String(parsed.previous) : "",
+    current: parsed.current != null ? String(parsed.current) : "",
+    factor: parsed.factor != null ? String(parsed.factor) : (parsed.previous != null || parsed.current != null ? "1" : ""),
+    rate: parsed.rate != null ? String(parsed.rate) : "",
+    extras: parsed.extras != null ? String(parsed.extras) : "",
+  });
+
+  if (selectedMonthKey) snapshotMonthDraft(selectedMonthKey);
   renderImportFields(parsed);
+  syncMonthLabels();
   refreshResultFromForm();
-  if (!latest) calculate();
 }
 
 function mapQueuedToBill(item) {
@@ -812,14 +829,17 @@ export function initCalculator(userId) {
         if (parsed.extras == null) missing.push("COSIP");
         if (missing.length) {
           setImportStatus(
-            `Dados parcialmente preenchidos. Revise: ${missing.join(", ")}. Depois salve no histórico.`,
+            `Li a fatura com cuidado e só preenchi o que parecia confiável. Revise/complete: ${missing.join(", ")}.`,
             "ok",
           );
         } else {
-          setImportStatus("Fatura lida. Revise os valores e salve no histórico.", "ok");
+          setImportStatus("Fatura lida. Confira os valores antes de salvar.", "ok");
         }
       } catch (error) {
-        setImportStatus(error.message || "Não foi possível ler a fatura.", "error");
+        if (error?.parsed) renderImportFields(error.parsed);
+        const detail = error?.message || String(error) || "Não foi possível ler a fatura.";
+        setImportStatus(detail, "error");
+        console.error("[importar fatura]", error);
       } finally {
         fileInput.disabled = false;
       }

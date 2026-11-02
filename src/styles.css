@@ -686,6 +686,19 @@ input[type="month"]{color-scheme:light}
   border-bottom:1px solid #eef2f6;
 }
 .import-fields li span{color:var(--muted)}
+.import-ocr-preview{
+  margin:12px 0 0;
+  max-height:140px;
+  overflow:auto;
+  padding:10px;
+  border:1px dashed var(--line);
+  background:#fafbfc;
+  color:var(--muted);
+  font-family:var(--mono);
+  font-size:11px;
+  line-height:1.45;
+  white-space:pre-wrap;
+}
 .sync-banner{
   margin:0 0 12px;
   padding:10px 12px;
