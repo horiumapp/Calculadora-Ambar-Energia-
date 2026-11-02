@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f28c00">
+  <title>Âmbar Energia — Calculadora de Conta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <section id="config-view" class="gate-view" hidden>
+    <div class="gate-card">
+      <div class="logo">
+        <div class="logo-text">
+          <span class="logo-name">Âmbar</span>
+          <span class="logo-sub">ENERGIA</span>
+        </div>
+        <svg class="logo-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <polygon points="24,4 44,40 24,40" fill="#f28c00"/>
+          <polygon points="24,4 4,40 24,40" fill="#1a3a6b"/>
+        </svg>
+      </div>
+      <h1>Configure o Supabase</h1>
+      <p>Crie um arquivo <code>.env</code> na raiz com:</p>
+      <pre>VITE_SUPABASE_URL=https://SEU_PROJETO.supabase.co
+VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
+      <p>Depois rode o SQL em <code>supabase/schema.sql</code> e reinicie com <code>npm run dev</code>.</p>
+    </div>
+  </section>
+
+  <section id="auth-view" class="gate-view" hidden>
+    <div class="gate-card">
+      <div class="logo">
+        <div class="logo-text">
+          <span class="logo-name">Âmbar</span>
+          <span class="logo-sub">ENERGIA</span>
+        </div>
+        <svg class="logo-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <polygon points="24,4 44,40 24,40" fill="#f28c00"/>
+          <polygon points="24,4 4,40 24,40" fill="#1a3a6b"/>
+        </svg>
+      </div>
+      <h1 id="auth-title">Entrar na conta</h1>
+      <p class="gate-sub">Cada cliente tem login, telefone e histórico próprio.</p>
+      <form id="auth-form" data-mode="login" novalidate>
+        <label id="auth-name-field" hidden>Nome completo
+          <input id="auth-name" type="text" autocomplete="name" placeholder="Seu nome">
+        </label>
+        <label>E-mail
+          <input id="auth-email" type="email" required autocomplete="email" placeholder="cliente@email.com">
+        </label>
+        <label>Senha
+          <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="Mínimo 6 caracteres">
+        </label>
+        <p id="auth-error" class="form-error" hidden></p>
+        <button class="primary" id="auth-submit" type="submit">Entrar</button>
+      </form>
+      <button class="ghost gate-toggle" id="auth-toggle" type="button">Criar uma conta</button>
+    </div>
+  </section>
+
+  <div id="app-view" hidden>
+    <div class="sheet">
+      <header class="bill-header">
+        <div class="brand-block">
+          <div class="logo">
+            <div class="logo-text">
+              <span class="logo-name">Âmbar</span>
+              <span class="logo-sub">ENERGIA</span>
+            </div>
+            <svg class="logo-mark" viewBox="0 0 48 48" aria-hidden="true">
+              <polygon points="24,4 44,40 24,40" fill="#f28c00"/>
+              <polygon points="24,4 4,40 24,40" fill="#1a3a6b"/>
+            </svg>
+          </div>
+          <p class="company-meta">
+            Calculadora de consumo com login multi-cliente<br>
+            Histórico, status de fatura e alerta por e-mail de vencimento
+          </p>
+        </div>
+        <div class="header-aside">
+          <div class="user-chip">
+            <div class="user-chip-text">
+              <span>CLIENTE LOGADO</span>
+              <strong id="user-email">Cliente</strong>
+            </div>
+            <div class="user-chip-actions">
+              <button class="icon-btn" id="edit-profile-btn" type="button" title="Editar perfil" aria-label="Editar perfil">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.3 0-6 1.7-6 3.8V20h12v-2.2c0-2.1-2.7-3.8-6-3.8Z" fill="currentColor"/>
+                  <path d="M18.1 8.2 19.8 9.9l-6.1 6.1H12v-1.7l6.1-6.1Zm1.8-1.8a1 1 0 0 1 1.4 0l1.3 1.3a1 1 0 0 1 0 1.4l-1 1-2.7-2.7 1-1Z" fill="currentColor"/>
+                </svg>
+              </button>
+              <button class="icon-btn icon-btn-danger" id="logout-btn" type="button" title="Sair" aria-label="Sair">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M14 12H21M18 8l3 4-3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="bill-section" id="profile-section" hidden>
+        <h2 class="bar bar-blue">PERFIL DO CLIENTE</h2>
+        <div class="section-body">
+          <form id="profile-form" class="profile-form" novalidate>
+            <div class="fields two">
+              <label>Nome completo
+                <input id="profile-name" type="text" required placeholder="Nome do cliente">
+              </label>
+              <label>Telefone
+                <input id="profile-phone" type="tel" required placeholder="+5591988887777">
+                <small>Use formato internacional E.164 para o Twilio.</small>
+              </label>
+            </div>
+            <p id="profile-error" class="form-error" hidden></p>
+            <p id="profile-ok" class="form-ok" hidden></p>
+            <div class="profile-actions">
+              <button class="secondary" type="submit">Salvar perfil</button>
+              <button class="ghost" type="button" id="cancel-profile-btn">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary-bar" aria-live="polite">
+        <div>
+          <span>CONTA MÊS</span>
+          <strong id="bill-month">OUTUBRO/2026</strong>
+        </div>
+        <div>
+          <span>VENCIMENTO</span>
+          <strong id="due-date">05/11/2026</strong>
+        </div>
+        <div>
+          <span>CONSUMO (KWH)</span>
+          <strong id="summary-consumption">333</strong>
+        </div>
+        <div class="summary-total">
+          <span>TOTAL A PAGAR (R$)</span>
+          <strong id="summary-total">321,61</strong>
+        </div>
+      </section>
+
+      <p class="customer-line" id="customer-line">Cliente · telefone não cadastrado</p>
+      <div id="due-alert" class="due-alert" hidden></div>
+
+      <main class="bill-body">
+        <form id="calc-form" class="bill-col" novalidate>
+          <section class="bill-section">
+            <h2 class="bar bar-orange">DADOS DA LEITURA (KWH)</h2>
+            <div class="section-body">
+              <label>Conta mês
+                <input id="bill-month-input" type="month" value="2026-10" required>
+                <small>Ao mudar para o mês seguinte, a leitura atual vira a leitura anterior automaticamente.</small>
+              </label>
+              <div class="fields two">
+                <label>Leitura anterior
+                  <input id="previous" type="number" min="0" step="any" value="14645" required>
+                </label>
+                <label>Leitura atual
+                  <input id="current" type="number" min="0" step="any" value="14978" required>
+                </label>
+              </div>
+              <label>Constante do medidor
+                <input id="factor" type="number" min="0" step="any" value="1" required>
+              </label>
+            </div>
+          </section>
+
+          <section class="bill-section">
+            <h2 class="bar bar-orange">TARIFA E COBRANÇAS</h2>
+            <div class="section-body">
+              <label>Tarifa de energia (R$/kWh)
+                <input id="rate" type="number" min="0" step="any" value="0.875710" required>
+              </label>
+              <label>Contr. iluminação pública — COSIP (R$)
+                <input id="extras" type="number" min="0" step="any" value="30.00" required>
+              </label>
+              <div class="actions">
+                <button class="primary" type="submit">Calcular conta</button>
+              </div>
+            </div>
+          </section>
+        </form>
+
+        <aside class="bill-col">
+          <section class="bill-section">
+            <h2 class="bar bar-blue">DESCRIÇÃO DA CONTA</h2>
+            <div class="section-body description">
+              <div class="status-row">
+                <span class="status-badge status-muted" id="bill-status-badge">Sem fatura salva</span>
+              </div>
+              <table class="desc-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qtde</th>
+                    <th>Preço unit.</th>
+                    <th>Valor (R$)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>CONSUMO</td>
+                    <td id="consumption">333 kWh</td>
+                    <td id="rate-label">0,875710</td>
+                    <td id="energy-cost">291,61</td>
+                  </tr>
+                  <tr>
+                    <td>CONTR. ILUMINACAO PUB. (COSIP)</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td id="extra-cost">30,00</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="total-row">
+                <span>TOTAL ESTIMADO A PAGAR</span>
+                <strong id="total">R$ 321,61</strong>
+              </div>
+              <p class="note">
+                <strong>Importante:</strong> estimativa com base nos valores informados.
+                Impostos, bandeiras e outras cobranças podem alterar o total real.
+              </p>
+              <div class="actions">
+                <button class="secondary" type="button" id="save">Salvar no histórico mensal</button>
+                <button class="ghost" type="button" id="mark-paid">Marcar como paga</button>
+                <p id="bill-action-hint" class="action-hint">
+                  Alertas por e-mail são enviados automaticamente a cada 8 horas enquanto a fatura estiver pendente ou vencida.
+                  Ao marcar como paga, os alertas param.
+                </p>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </main>
+
+      <section class="bill-section">
+        <h2 class="bar bar-blue">DASHBOARD · HISTÓRICO MENSAL DE CONSUMO</h2>
+        <div class="section-body dashboard">
+          <div class="history-tools">
+            <button class="icon-btn icon-btn-light" id="clear-history" type="button" title="Limpar histórico" aria-label="Limpar histórico" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+                <path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M6.5 7l.8 12.2A1.8 1.8 0 0 0 9.1 21h5.8a1.8 1.8 0 0 0 1.8-1.8L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi">
+              <span>Meses salvos</span>
+              <strong id="kpi-months">0</strong>
+            </div>
+            <div class="kpi">
+              <span>Média mensal</span>
+              <strong id="kpi-avg">—</strong>
+            </div>
+            <div class="kpi">
+              <span>Maior consumo</span>
+              <strong id="kpi-peak">—</strong>
+            </div>
+            <div class="kpi">
+              <span>Total gasto (12 meses)</span>
+              <strong id="kpi-spend">—</strong>
+            </div>
+          </div>
+
+          <div id="dashboard-content">
+            <p class="chart-hint">Até 12 meses a partir da primeira fatura salva. Meses sem registro não aparecem como pendentes.</p>
+            <div class="chart-wrap">
+              <canvas id="history-chart" width="900" height="260" aria-label="Gráfico de consumo mensal"></canvas>
+            </div>
+            <div id="history-empty" class="empty">
+              Nenhum mês salvo ainda. Calcule a conta e clique em “Salvar no histórico mensal”.
+            </div>
+            <div class="table-wrap">
+              <table id="history-table" hidden>
+                <thead>
+                  <tr>
+                    <th>Mês</th>
+                    <th>Consumo</th>
+                    <th>Tarifa</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Vencimento</th>
+                  </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bill-section messages">
+        <h2 class="bar bar-orange">MENSAGENS IMPORTANTES</h2>
+        <div class="section-body">
+          <p>
+            Histórico e status ficam no Supabase por cliente. Alertas de vencimento são enviados por e-mail automaticamente.
+            Confirme sempre os valores oficiais da distribuidora.
+          </p>
+        </div>
+      </section>
+
+      <footer class="bill-footer">
+        <div>
+          <strong>MANTENHA SUA CONTA EM DIA!</strong>
+          <span>Conta autenticada · alertas de vencimento por e-mail</span>
+        </div>
+        <div class="footer-brand">Âmbar ENERGIA</div>
+      </footer>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

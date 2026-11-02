@@ -1,0 +1,14 @@
+### Disparo automático a cada 8 horas
+### Agende este POST no cron-job.org, EasyCron, GitHub Actions, etc.
+### Authorization/apikey = VITE_SUPABASE_ANON_KEY do .env
+### x-cron-secret = CRON_SECRET dos Secrets do Supabase
+
+POST https://jhsslpacvefgthpczgcy.supabase.co/functions/v1/send-due-alerts
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impoc3NscGFjdmVmZ3RocGN6Z2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MjE3MzUsImV4cCI6MjEwOTE5NzczNX0.YFSYbTbUdHsQWepRm5GF-OAKA1bRe_C8a-DsZduNvlg
+apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impoc3NscGFjdmVmZ3RocGN6Z2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MjE3MzUsImV4cCI6MjEwOTE5NzczNX0.YFSYbTbUdHsQWepRm5GF-OAKA1bRe_C8a-DsZduNvlg
+x-cron-secret: 1aae7ab70c40ae472837072a6f6e793ad7df01f206deb032
+Content-Type: application/json
+
+{
+  "days_ahead": 30
+}

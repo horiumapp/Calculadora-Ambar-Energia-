@@ -1,0 +1,2 @@
+[functions.send-due-alerts]
+verify_jwt = false
