@@ -1,7 +1,7 @@
-import { createWorker } from "tesseract.js";
+import { createWorker, PSM } from "tesseract.js";
 import workerPath from "tesseract.js/dist/worker.min.js?url";
 import corePath from "tesseract.js-core/tesseract-core-simd-lstm.wasm.js?url";
-import { parseBillText } from "./billParser.js";
+import { mergeParsedResults, parseBillText } from "./billParser.js";
 
 let workerPromise = null;
 
@@ -24,7 +24,6 @@ async function getWorker(onProgress) {
       const worker = await createWorker("por+eng", 1, {
         workerPath,
         corePath,
-        // Idioma: tesseract busca sozinho em cdn.jsdelivr.net/@tesseract.js-data (connect-src).
         logger: (message) => {
           if (!onProgress) return;
           if (message.status === "loading language traineddata") {
@@ -50,7 +49,26 @@ async function getWorker(onProgress) {
   return workerPromise;
 }
 
-async function fileToImageSource(file, onProgress) {
+function neutralizeOrangeAndContrast(imageData, { hardBin = false } = {}) {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+    if (r > 170 && g > 70 && g < 210 && b < 140) {
+      r = g = b = 255;
+    }
+    let gray = r * 0.299 + g * 0.587 + b * 0.114;
+    gray = Math.max(0, Math.min(255, (gray - 35) * (255 / 185)));
+    const v = hardBin ? (gray < 155 ? 0 : 255) : gray;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+  }
+  return imageData;
+}
+
+async function fileToBaseCanvas(file, onProgress) {
   const type = String(file.type || "").toLowerCase();
   const name = String(file.name || "").toLowerCase();
   const isPdf = type === "application/pdf" || name.endsWith(".pdf");
@@ -64,7 +82,7 @@ async function fileToImageSource(file, onProgress) {
     const data = new Uint8Array(await file.arrayBuffer());
     const pdf = await pdfjs.getDocument({ data }).promise;
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 2 });
+    const viewport = page.getViewport({ scale: 2.4 });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -76,16 +94,63 @@ async function fileToImageSource(file, onProgress) {
   onProgress?.("Preparando imagem…");
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
-  const maxSide = 2000;
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const maxSide = 2400;
+  const minSide = 1600;
+  const longest = Math.max(bitmap.width, bitmap.height);
+  let scale = 1;
+  if (longest > maxSide) scale = maxSide / longest;
+  else if (longest < minSide) scale = minSide / longest;
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close?.();
   return canvas;
+}
+
+function cloneProcessedCanvas(sourceCanvas, { hardBin = false } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = sourceCanvas.width;
+  canvas.height = sourceCanvas.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(sourceCanvas, 0, 0);
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  neutralizeOrangeAndContrast(image, { hardBin });
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function scoreParsed(parsed) {
+  return ["monthKey", "previous", "current", "rate", "extras", "factor"]
+    .filter((key) => parsed?.[key] != null).length;
+}
+
+async function recognizePasses(baseCanvas, worker, onProgress) {
+  const passes = [
+    { label: "passagem 1/2", hardBin: false, psm: PSM.AUTO },
+    { label: "passagem 2/2", hardBin: true, psm: PSM.SPARSE_TEXT },
+  ];
+  const parsedList = [];
+
+  for (const pass of passes) {
+    onProgress?.(pass.label);
+    const canvas = cloneProcessedCanvas(baseCanvas, { hardBin: pass.hardBin });
+    await worker.setParameters({
+      tessedit_pageseg_mode: pass.psm,
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300",
+    });
+    const result = await worker.recognize(canvas);
+    const text = result?.data?.text || "";
+    if (!text.trim()) continue;
+    parsedList.push(parseBillText(text));
+  }
+
+  return parsedList;
 }
 
 /**
@@ -97,16 +162,22 @@ export async function importBillFromFile(file, onProgress) {
   if (!file) throw new Error("Selecione uma foto ou PDF da fatura.");
 
   try {
-    const source = await fileToImageSource(file, onProgress);
+    const baseCanvas = await fileToBaseCanvas(file, onProgress);
     onProgress?.("Iniciando OCR…");
     const worker = await getWorker(onProgress);
-    const result = await worker.recognize(source);
-    const text = result?.data?.text || "";
-    if (!text.trim()) {
+    const parsedList = await recognizePasses(baseCanvas, worker, onProgress);
+    if (!parsedList.length) {
       throw new Error("Não foi possível ler texto na fatura. Tente uma foto mais nítida ou um PDF.");
     }
 
-    const parsed = parseBillText(text);
+    const parsed = mergeParsedResults(parsedList);
+    parsed.confidence = scoreParsed(parsed) / 6;
+    parsed.rawPreview = parsedList
+      .map((item) => item.rawPreview)
+      .filter(Boolean)
+      .join("\n---\n")
+      .slice(0, 800);
+
     const coreFound = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate]
       .filter((v) => v != null).length;
     if (coreFound < 2) {
@@ -114,12 +185,11 @@ export async function importBillFromFile(file, onProgress) {
         "A imagem foi lida, mas não deu para identificar os dados com segurança. Veja o texto reconhecido e preencha manualmente o que faltar.",
       );
       err.parsed = parsed;
-      err.ocrText = text.slice(0, 600);
       throw err;
     }
     return parsed;
   } catch (error) {
-    if (error?.parsed || /Poucos dados|Não foi possível ler texto/i.test(String(error?.message || ""))) {
+    if (error?.parsed || /Poucos dados|Não foi possível ler texto|não deu para identificar/i.test(String(error?.message || ""))) {
       throw error;
     }
     throw new Error(formatImportError(error));

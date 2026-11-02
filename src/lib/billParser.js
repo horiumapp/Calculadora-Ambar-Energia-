@@ -13,6 +13,11 @@ const MONTH_NAMES = {
   dezembro: 12, dez: 12,
 };
 
+const MONTH_FULL = [
+  "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+
 function normalizeText(text) {
   return String(text || "")
     .normalize("NFD")
@@ -64,165 +69,232 @@ function looksLikeYear(num) {
   return Number.isInteger(num) && num >= 2000 && num <= 2100;
 }
 
-function extractNumberTokens(line) {
-  return String(line).match(
-    /-?\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|-?\d+[.,]\d{2,6}|-?\d{4,}|-?\d+/g,
-  ) || [];
+function editDistance(a, b) {
+  const s = String(a);
+  const t = String(b);
+  const dp = Array.from({ length: s.length + 1 }, () => Array(t.length + 1).fill(0));
+  for (let i = 0; i <= s.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= t.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= s.length; i++) {
+    for (let j = 1; j <= t.length; j++) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[s.length][t.length];
+}
+
+/** Corrige OCR tipo QUTUBRO → outubro. */
+function resolveMonthName(raw) {
+  let token = String(raw || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!token) return null;
+  token = token.replace(/^q/, "o").replace(/0/g, "o");
+  if (MONTH_NAMES[token]) return MONTH_NAMES[token];
+  if (token.length >= 3 && MONTH_NAMES[token.slice(0, 3)]) return MONTH_NAMES[token.slice(0, 3)];
+  let best = null;
+  let bestDist = Infinity;
+  for (let i = 0; i < MONTH_FULL.length; i++) {
+    const name = MONTH_FULL[i];
+    const dist = editDistance(token, name);
+    const maxAllowed = token.length <= 4 ? 1 : 2;
+    if (dist <= maxAllowed && dist < bestDist) {
+      bestDist = dist;
+      best = i + 1;
+    }
+  }
+  return best;
 }
 
 function extractMonthKey(text) {
   const normalized = normalizeText(text).toLowerCase();
 
-  const patterns = [
-    /(?:referencia|mes\s*\/?\s*ano|conta\s*mes|periodo|ref\.?)[^\n]{0,48}?((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*)[\/\-\s.]+(\d{4}|\d{2})/i,
-    /\b((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*)[\/\-](\d{4}|\d{2})\b/i,
+  const candidates = [
+    ...normalized.matchAll(
+      /(?:conta\s*mes|referencia|mes\s*\/?\s*ano|periodo)?[^\n]{0,40}?([a-z]{3,12})\s*[\/\-]\s*(\d{4}|\d{2})/gi,
+    ),
   ];
 
-  for (const re of patterns) {
-    const match = normalized.match(re);
-    if (!match) continue;
-    const monthToken = match[1].slice(0, 3);
-    const month = MONTH_NAMES[monthToken] || MONTH_NAMES[match[1]];
+  for (const match of candidates) {
+    const month = resolveMonthName(match[1]);
+    if (!month) continue;
     let year = Number(match[2]);
     if (year < 100) year += 2000;
+    // OCR às vezes troca 2026→2028/2025; se mês ok e ano perto, corrige para ano atual/próximo.
+    if (!isPlausibleBillYear(year)) {
+      const now = currentYear();
+      if (Math.abs(year - now) <= 3) year = now;
+      else continue;
+    }
     const key = toMonthKey(year, month);
     if (key) return key;
   }
 
-  const labeledNumeric = normalized.match(
-    /(?:referencia|mes\s*\/?\s*ano|conta\s*mes|periodo)[^\n]{0,40}?\b(0?[1-9]|1[0-2])[\/\-](\d{4})\b/i,
-  );
-  if (labeledNumeric) {
-    const key = toMonthKey(labeledNumeric[2], Number(labeledNumeric[1]));
+  // Só o nome do mês (ex.: linha "QUTUBRO/2026" quebrada).
+  const loose = normalized.match(/\b([a-z]{5,12})\s*[\/\-]\s*(20\d{2})\b/i);
+  if (loose) {
+    const month = resolveMonthName(loose[1]);
+    let year = Number(loose[2]);
+    if (!isPlausibleBillYear(year) && Math.abs(year - currentYear()) <= 3) year = currentYear();
+    const key = toMonthKey(year, month);
     if (key) return key;
   }
 
   return null;
 }
 
-function findCandidatesNear(labelRe, text, filterFn) {
-  const lines = text.split(/\n+/);
-  const found = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = normalizeText(lines[i]);
-    if (!labelRe.test(line)) continue;
-
-    const scan = [line];
-    for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
-      scan.push(normalizeText(lines[j]));
-    }
-
-    for (const candidateLine of scan) {
-      for (const token of extractNumberTokens(candidateLine)) {
-        const num = parseBrNumber(token);
-        if (num == null) continue;
-        if (filterFn && !filterFn(num, token, candidateLine)) continue;
-        found.push({ num, token, line: candidateLine });
-      }
-    }
-  }
-
-  return found;
-}
-
 function extractReadings(text) {
-  const readingFilter = (num, token) => {
-    if (!Number.isFinite(num) || num < 0 || num > 1_000_000_000) return false;
-    // Anos (ex.: 2026) quase nunca são leitura de medidor isolada.
-    if (looksLikeYear(num)) return false;
-    // Leituras costumam ter pelo menos 3 dígitos (ou milhar com ponto).
-    const digits = String(token).replace(/\D/g, "");
-    return digits.length >= 3;
-  };
+  const normalized = normalizeText(text);
 
-  const previousHits = findCandidatesNear(
-    /leitura\s+anterior|leitura\s+ant\.?|anterior\s+do\s+medidor/i,
-    text,
-    readingFilter,
+  // Linha Amazonas (mesmo com OCR ruído): En Ativa Total 14978 14645 ...
+  const compact = normalized.match(
+    /en\s*[a-z]{0,12}\s*total[^\d]{0,30}(\d{4,6})\s+(\d{4,6})/i,
   );
-  const currentHits = findCandidatesNear(
-    /leitura\s+atual|leitura\s+do\s+mes|atual\s+do\s+medidor/i,
-    text,
-    readingFilter,
-  );
-
-  // Evita o rótulo genérico "anterior/atual" sozinho — pega demais lixo do OCR.
-  let previous = previousHits[0]?.num ?? null;
-  let current = currentHits[0]?.num ?? null;
-
-  if (previous == null || current == null) {
-    const pair = normalizeText(text).match(
-      /leitura\s+anterior[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{3,9})[^\d]{0,40}leitura\s+atual[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{3,9})/i,
-    );
-    if (pair) {
-      previous = parseBrNumber(pair[1]);
-      current = parseBrNumber(pair[2]);
+  if (compact) {
+    const current = parseBrNumber(compact[1]);
+    const previous = parseBrNumber(compact[2]);
+    if (
+      current != null && previous != null
+      && !looksLikeYear(current) && !looksLikeYear(previous)
+      && current >= previous
+    ) {
+      return { previous, current };
     }
   }
 
-  if (previous == null || current == null) {
-    const table = normalizeText(text).match(
-      /(?:anterior|atual).{0,80}?(\d{1,3}(?:[.\s]\d{3})+|\d{4,9}).{0,40}?(\d{1,3}(?:[.\s]\d{3})+|\d{4,9})/i,
-    );
-    if (table) {
-      const a = parseBrNumber(table[1]);
-      const b = parseBrNumber(table[2]);
-      if (a != null && b != null && !looksLikeYear(a) && !looksLikeYear(b) && b >= a) {
-        previous = previous ?? a;
-        current = current ?? b;
-      }
+  // Multilinha (SPARSE OCR): En Ativa Total \n 14978 \n 14645
+  const multi = normalized.match(
+    /en\s*[a-z]{0,12}\s*total\D{0,40}?(\d{4,6})\D{0,20}?(\d{4,6})/i,
+  );
+  if (multi) {
+    const current = parseBrNumber(multi[1]);
+    const previous = parseBrNumber(multi[2]);
+    if (
+      current != null && previous != null
+      && !looksLikeYear(current) && !looksLikeYear(previous)
+      && current >= previous
+      && String(current).length >= 4
+      && String(previous).length >= 4
+    ) {
+      return { previous, current };
     }
   }
 
+  // Cabeçalho Leit. Atual ... Leit. Anterior ... depois dois números grandes
+  const labeledPair = normalized.match(
+    /leit\.?\s*atual[\s\S]{0,80}?leit\.?\s*anterior[\s\S]{0,120}?(\d{4,6})\D+(\d{4,6})/i,
+  );
+  if (labeledPair) {
+    const current = parseBrNumber(labeledPair[1]);
+    const previous = parseBrNumber(labeledPair[2]);
+    if (
+      current != null && previous != null
+      && !looksLikeYear(current) && !looksLikeYear(previous)
+      && current >= previous
+    ) {
+      return { previous, current };
+    }
+  }
+
+  const currentMatch = normalized.match(
+    /leit\.?\s*atual(?:\s*kwh)?[^\d]{0,24}(\d{4,6})(?!\s*[\/.\-]\d)/i,
+  );
+  const previousMatch = normalized.match(
+    /leit\.?\s*anterior(?:\s*kwh)?[^\d]{0,24}(\d{4,6})(?!\s*[\/.\-]\d)/i,
+  );
+
+  let current = currentMatch ? parseBrNumber(currentMatch[1]) : null;
+  let previous = previousMatch ? parseBrNumber(previousMatch[1]) : null;
+
+  if (previous == null) {
+    const m = normalized.match(
+      /leitura\s+anterior[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{4,9})(?!\s*[\/.\-]\d)/i,
+    );
+    previous = m ? parseBrNumber(m[1]) : null;
+  }
+  if (current == null) {
+    const m = normalized.match(
+      /leitura\s+atual[^\d]{0,24}(\d{1,3}(?:[.\s]\d{3})+|\d{4,9})(?!\s*[\/.\-]\d)/i,
+    );
+    current = m ? parseBrNumber(m[1]) : null;
+  }
+
+  if (looksLikeYear(previous)) previous = null;
+  if (looksLikeYear(current)) current = null;
   if (previous != null && current != null && current < previous) {
     return { previous: null, current: null };
   }
-
   return { previous, current };
 }
 
 function extractRate(text) {
-  const rateFilter = (num, token) => {
-    if (!(num > 0.05 && num < 5)) return false;
-    // Tarifa BR quase sempre tem casas decimais (ex.: 0,875710). Inteiro 2/5 é lixo de OCR.
-    return /[.,]\d{2,}/.test(token);
-  };
+  const normalized = normalizeText(text);
 
-  const hits = findCandidatesNear(
-    /(?:tarifa|preco\s*unit(?:ario)?|valor\s*unitario|te\b|tusd|r\$\s*\/\s*kwh)/i,
-    text,
-    rateFilter,
+  const am = normalized.match(
+    /consumo[^\n]{0,60}?a\s*r\$\s*(\d+[.,]\d{4,6})/i,
   );
-  if (hits.length) return hits[0].num;
+  if (am) {
+    const rate = parseBrNumber(am[1]);
+    if (rate != null && rate > 0.05 && rate < 5) return rate;
+  }
 
-  const match = normalizeText(text).match(
-    /(\d+[.,]\d{4,6})\s*(?:\/\s*)?kwh/i,
+  // OCR às vezes: "333 A R$ 0,875710" sem a palavra consumo junta
+  const aReais = normalized.match(
+    /\b\d{2,5}\s*a\s*r\$\s*(\d+[.,]\d{4,6})/i,
   );
-  return match ? parseBrNumber(match[1]) : null;
+  if (aReais) {
+    const rate = parseBrNumber(aReais[1]);
+    if (rate != null && rate > 0.05 && rate < 5) return rate;
+  }
+
+  const generic = normalized.match(
+    /(?:tarifa|preco\s*unit|r\$\s*\/\s*kwh)[^\d]{0,20}(\d+[.,]\d{4,6})/i,
+  );
+  if (generic) {
+    const rate = parseBrNumber(generic[1]);
+    if (rate != null && rate > 0.05 && rate < 5) return rate;
+  }
+
+  const kwh = normalized.match(/(\d+[.,]\d{4,6})\s*(?:\/\s*)?kwh/i);
+  if (kwh) {
+    const rate = parseBrNumber(kwh[1]);
+    if (rate != null && rate > 0.05 && rate < 5) return rate;
+  }
+
+  return null;
 }
 
 function extractExtras(text) {
-  const hits = findCandidatesNear(
-    /cosip|cip\b|iluminacao\s+publica|contrib(?:uicao)?[^\n]{0,20}ilumin/i,
-    text,
-    (num, token) => {
-      if (!(num >= 0 && num <= 5000)) return false;
-      // Preferir valores monetários com decimais; aceitar inteiro só se >= 5.
-      return /[.,]\d{2}/.test(token) || num >= 5;
-    },
+  const normalized = normalizeText(text);
+  const cosip = normalized.match(
+    /(?:contr\.?\s*iluminacao\s*pub\.?|iluminacao\s*publica|\bcosip\b)[^\d]{0,40}(\d{1,4}[.,]\d{2}|\d{1,4})(?!\d)/i,
   );
-  return hits[0]?.num ?? null;
+  if (cosip) {
+    const value = parseBrNumber(cosip[1]);
+    if (value != null && value >= 0 && value <= 5000) return value;
+  }
+  return null;
 }
 
 function extractFactor(text) {
-  const hits = findCandidatesNear(
-    /constante(?:\s+do\s+medidor)?|multiplicador|fator\s+(?:do\s+)?medidor/i,
-    text,
-    (num) => num > 0 && num <= 1000,
+  const normalized = normalizeText(text);
+
+  const row = normalized.match(
+    /en\s*[a-z]{0,12}\s*total\s+(\d{4,6})\s+(\d{4,6})\s+(\d+[.,]\d{1,3}|\d+)/i,
   );
-  // Só preenche se achou rótulo explícito. Senão null (UI pode assumir 1 depois).
-  return hits[0]?.num ?? null;
+  if (row) {
+    const factor = parseBrNumber(row[3]);
+    if (factor != null && factor > 0 && factor <= 1000) return factor;
+  }
+
+  const labeled = normalized.match(
+    /constante(?:\s+do\s+medidor)?[^\d]{0,20}(\d+[.,]\d{1,3}|\d+)/i,
+  );
+  if (labeled) {
+    const factor = parseBrNumber(labeled[1]);
+    if (factor != null && factor > 0 && factor <= 1000) return factor;
+  }
+
+  return null;
 }
 
 function sanitizeParsed(parsed) {
@@ -249,6 +321,11 @@ function sanitizeParsed(parsed) {
     next.factor = null;
   }
 
+  // Constante quase sempre 1 nestas contas residenciais se leituras ok.
+  if (next.factor == null && next.previous != null && next.current != null) {
+    next.factor = 1;
+  }
+
   if (next.extras != null && (!(next.extras >= 0 && next.extras <= 5000))) {
     next.extras = null;
   }
@@ -256,8 +333,28 @@ function sanitizeParsed(parsed) {
   return next;
 }
 
+function extractConsumptionHint(text) {
+  const normalized = normalizeText(text);
+  const labeled = normalized.match(
+    /consumo\s*\(?\s*kwh\s*\)?[^\d]{0,20}(\d{2,5})/i,
+  );
+  if (labeled) {
+    const value = parseBrNumber(labeled[1]);
+    if (value != null && value > 0 && value < 100000) return value;
+  }
+  // Linha En Ativa ... medido faturado (dois iguais no fim)
+  const row = normalized.match(
+    /en\s*[a-z]{0,12}\s*total[\s\S]{0,80}?(\d{2,5})\s+\1\b/i,
+  );
+  if (row) {
+    const value = parseBrNumber(row[1]);
+    if (value != null && value > 0 && value < 100000) return value;
+  }
+  return null;
+}
+
 /**
- * Extrai campos úteis de texto OCR de fatura de energia (BR).
+ * Extrai campos úteis de texto OCR de fatura de energia (BR / Amazonas Energia).
  */
 export function parseBillText(ocrText) {
   const text = String(ocrText || "");
@@ -267,7 +364,19 @@ export function parseBillText(ocrText) {
     rate: extractRate(text),
     extras: extractExtras(text),
     factor: extractFactor(text),
+    consumptionHint: extractConsumptionHint(text),
   };
+
+  // Se leituras e consumo não batem, descarta o par (OCR cortou dígito).
+  if (
+    raw.previous != null
+    && raw.current != null
+    && raw.consumptionHint != null
+    && Math.abs((raw.current - raw.previous) * (raw.factor || 1) - raw.consumptionHint) > Math.max(8, raw.consumptionHint * 0.08)
+  ) {
+    raw.previous = null;
+    raw.current = null;
+  }
 
   const parsed = sanitizeParsed(raw);
   const core = [parsed.monthKey, parsed.previous, parsed.current, parsed.rate];
@@ -276,8 +385,58 @@ export function parseBillText(ocrText) {
 
   return {
     ...parsed,
+    consumptionHint: raw.consumptionHint,
     confidence,
     warnings: [],
     rawPreview: text.slice(0, 600),
   };
+}
+
+function readingError(item, consumptionHint) {
+  if (item?.previous == null || item?.current == null) return Infinity;
+  if (item.current < item.previous) return Infinity;
+  const factor = item.factor || 1;
+  const delta = (item.current - item.previous) * factor;
+  if (consumptionHint == null) {
+    // Prefere leituras com mais dígitos (menos truncamento OCR).
+    return 1000 - (String(item.previous).length + String(item.current).length) * 10;
+  }
+  return Math.abs(delta - consumptionHint);
+}
+
+/** Mescla vários resultados OCR, preferindo campos preenchidos e leituras coerentes. */
+export function mergeParsedResults(results) {
+  const list = (results || []).filter(Boolean);
+  const consumptionHint = list.map((item) => item.consumptionHint).find((v) => v != null) ?? null;
+
+  const readingCandidate = [...list]
+    .filter((item) => item.previous != null && item.current != null)
+    .sort((a, b) => readingError(a, consumptionHint) - readingError(b, consumptionHint))[0] || null;
+
+  const merged = {
+    monthKey: null,
+    previous: readingCandidate?.previous ?? null,
+    current: readingCandidate?.current ?? null,
+    factor: readingCandidate?.factor ?? null,
+    rate: null,
+    extras: null,
+    rawPreview: "",
+  };
+
+  for (const item of list) {
+    if (merged.monthKey == null && item.monthKey != null) merged.monthKey = item.monthKey;
+    if (merged.rate == null && item.rate != null) merged.rate = item.rate;
+    if (merged.extras == null && item.extras != null) merged.extras = item.extras;
+    if (merged.factor == null && item.factor != null) merged.factor = item.factor;
+    if (!merged.rawPreview && item.rawPreview) merged.rawPreview = item.rawPreview;
+  }
+
+  const sanitized = sanitizeParsed({
+    ...merged,
+    confidence: 0,
+    warnings: [],
+    rawPreview: merged.rawPreview,
+  });
+  sanitized.consumptionHint = consumptionHint;
+  return sanitized;
 }
