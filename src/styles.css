@@ -566,6 +566,37 @@ input[type="month"]{color-scheme:light}
   font-family:var(--mono);
   font-size:12px;
 }
+.password-field{
+  position:relative;
+  display:block;
+  margin-top:6px;
+}
+.password-field input{
+  width:100%;
+  margin-top:0;
+  padding-right:44px;
+  box-sizing:border-box;
+}
+.password-toggle{
+  position:absolute;
+  right:6px;
+  top:50%;
+  transform:translateY(-50%);
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:var(--muted);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  padding:0;
+  line-height:0;
+}
+.password-toggle svg{width:18px;height:18px;display:block}
+.password-toggle:hover{background:#eef2f6;color:var(--navy)}
 .gate-toggle{width:100%;margin-top:10px}
 .header-logout{margin-top:8px}
 .form-error{

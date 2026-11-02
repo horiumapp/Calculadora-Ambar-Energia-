@@ -72,6 +72,18 @@ async function enterApp(session) {
 function wireAuth() {
   setAuthMode("login");
 
+  $("auth-password-toggle").addEventListener("click", () => {
+    const input = $("auth-password");
+    const toggle = $("auth-password-toggle");
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    toggle.setAttribute("aria-pressed", String(show));
+    toggle.title = show ? "Ocultar senha" : "Mostrar senha";
+    toggle.setAttribute("aria-label", show ? "Ocultar senha" : "Mostrar senha");
+    toggle.querySelector(".eye-open").hidden = show;
+    toggle.querySelector(".eye-closed").hidden = !show;
+  });
+
   $("auth-toggle").addEventListener("click", () => {
     const next = $("auth-form").dataset.mode === "login" ? "signup" : "login";
     setAuthMode(next);

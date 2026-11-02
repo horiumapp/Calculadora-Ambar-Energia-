@@ -52,7 +52,20 @@ VITE_SUPABASE_ANON_KEY=sua_anon_key</pre>
           <input id="auth-email" type="email" required autocomplete="email" placeholder="cliente@email.com">
         </label>
         <label>Senha
-          <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="Mínimo 6 caracteres">
+          <span class="password-field">
+            <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="Mínimo 6 caracteres">
+            <button class="password-toggle" id="auth-password-toggle" type="button" title="Mostrar senha" aria-label="Mostrar senha" aria-pressed="false">
+              <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+                <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true" fill="none" hidden>
+                <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M4 20 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </span>
         </label>
         <p id="auth-error" class="form-error" hidden></p>
         <button class="primary" id="auth-submit" type="submit">Entrar</button>
