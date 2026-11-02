@@ -1,11 +1,11 @@
 # Âmbar Energia — Calculadora multi-cliente
 
-App web com login de clientes (Supabase Auth), histórico de faturas no Postgres, status **paga / pendente / vencida** e alerta SMS de vencimento via **Twilio** (Edge Function).
+App web com login de clientes (Supabase Auth), histórico de faturas no Postgres, status **paga / pendente / vencida** e alerta por **e-mail** via Resend (Edge Function).
 
 ## Stack
 - Vite + JavaScript
 - Supabase (Auth, Postgres, RLS, Edge Functions)
-- Twilio SMS
+- Resend (e-mail)
 
 ## 1. Instalar e rodar
 
@@ -31,89 +31,89 @@ Abre em `http://localhost:5173`.
 
 1. Crie um projeto em [supabase.com](https://supabase.com)
 2. Abra **SQL Editor**
-3. Execute o arquivo [`supabase/schema.sql`](supabase/schema.sql)
+3. **Projeto novo:** execute [`supabase/schema.sql`](supabase/schema.sql)
+4. **Projeto existente:** faça backup de `profiles`, `bills` e `alert_logs`, depois execute [`supabase/migrations/20261102_security_hardening.sql`](supabase/migrations/20261102_security_hardening.sql)
 
-Isso cria:
+Isso cria/atualiza:
 - `profiles` (nome + telefone)
-- `bills` (faturas mensais + status + vencimento)
-- `alert_logs` (histórico de SMS)
+- `bills` (faturas mensais + status + vencimento + constraints)
+- `alert_logs` (histórico de alertas + idempotência)
 - RLS por usuário
+- trigger de integridade financeira (recalcula totais no servidor)
 - trigger de perfil no cadastro
 
-## 3. Auth
+## 3. Auth (painel Supabase)
 
-No painel Supabase → **Authentication**:
+Em **Authentication → Providers**:
 - habilite e-mail/senha
-- (opcional) desative confirmação de e-mail em desenvolvimento
+- defina política de senha forte (mín. 8 caracteres no app; alinhe no Auth settings)
+- em produção, mantenha **Confirm email** habilitado
+- em **Attack Protection**, mantenha rate limiting / CAPTCHA se disponível
+- (opcional) habilite MFA (TOTP)
 
-## 4. Alerta por e-mail (Resend — gratuito)
+Configure **URL Configuration** com a URL do app para recovery de senha.
 
-### Criar conta Resend
-1. Acesse [resend.com](https://resend.com) e crie conta grátis
-2. Em **API Keys**, crie uma key e copie
-3. (Opcional) Em **Domains**, valide seu domínio para enviar a qualquer e-mail  
-   - Sem domínio, o remetente de teste `onboarding@resend.dev` só envia para o e-mail da sua conta Resend
+## 4. Alerta por e-mail (Resend)
 
 ### Segredos no Supabase
-**Project Settings → Edge Functions → Secrets**:
+**Project Settings → Edge Functions → Secrets** (nunca versionar valores reais):
 
 ```text
-RESEND_API_KEY=re_xxxxxxxxx
+RESEND_API_KEY=<sua_chave_resend>
 RESEND_FROM=Ambar Energia <onboarding@resend.dev>
-CRON_SECRET=1aae7ab70c40ae472837072a6f6e793ad7df01f206deb032
+CRON_SECRET=<gere_com_openssl_rand_-hex_32>
+ALLOWED_ORIGIN=https://seu-dominio.com
 ```
 
-Com domínio verificado, use por exemplo: `RESEND_FROM=Ambar Energia <alerta@seudominio.com>`
+> Se `CRON_SECRET` já apareceu em Git/README/HTTP, considere-o **comprometido** e **rotacione** imediatamente.
 
 ### Deploy da function
 
 ```bash
 npx supabase login
-npx supabase link --project-ref jhsslpacvefgthpczgcy
+npx supabase link --project-ref SEU_PROJECT_REF
 npx supabase functions deploy send-due-alerts
 ```
 
 ### Cron automático a cada 8 horas
 
-Os alertas **não** são enviados pelo cliente na tela. O sistema envia sozinho por e-mail.
+Agende POST a cada 8 horas (cron-job.org, EasyCron, etc.):
 
-Agende a cada 8 horas em [console.cron-job.org/jobs/create](https://console.cron-job.org/jobs/create) (crie conta em [signup](https://console.cron-job.org/signup) se ainda não tiver):
-
-1. **URL:** `https://jhsslpacvefgthpczgcy.supabase.co/functions/v1/send-due-alerts`
+1. **URL:** `https://SEU_PROJETO.supabase.co/functions/v1/send-due-alerts`
 2. **Method:** POST
-3. **Schedule:** every 8 hours
-4. **Headers:**
-   - `Authorization: Bearer <VITE_SUPABASE_ANON_KEY>`
-   - `apikey: <VITE_SUPABASE_ANON_KEY>`
-   - `x-cron-secret: 1aae7ab70c40ae472837072a6f6e793ad7df01f206deb032`
+3. **Headers:**
+   - `Authorization: Bearer <ANON_KEY>`
+   - `apikey: <ANON_KEY>`
+   - `x-cron-secret: <CRON_SECRET>`
    - `Content-Type: application/json`
-5. **Body:** `{"days_ahead":30}`
+4. **Body:** `{"days_ahead":30}` (`days_ahead` é limitado a 1–60 no servidor)
 
-Modelo pronto em [`supabase/cron-alertas.http`](supabase/cron-alertas.http).
+Modelo sem segredos: [`supabase/cron-alertas.http`](supabase/cron-alertas.http).
 
-A function:
-- só processa faturas `pending` / `overdue` (pagas são ignoradas)
-- envia e-mail para o e-mail de login do cliente
-- respeita intervalo de **8 horas** entre alertas da mesma fatura
-- para automaticamente quando o status vira `paid`
+## 5. Segurança
 
-## 5. Uso no app
+Veja o relatório completo em [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md).
 
-1. Cadastre/entre com e-mail e senha
-2. Salve **nome** (e telefone, se quiser) no perfil
-3. Calcule e salve a fatura do mês
-4. Enquanto estiver **pendente/vencida**, o sistema alerta por e-mail sozinho a cada 8h
-5. Clique em **Marcar como paga** para parar os alertas
-6. Acompanhe o dashboard
+Scripts:
+
+```bash
+npm run build
+npm audit
+npm run test:security
+```
+
+## 6. Uso no app
+
+1. Cadastre/entre com e-mail e senha (mín. 8 caracteres)
+2. Use **Esqueci a senha** se necessário
+3. Salve **nome** e **telefone** no perfil
+4. Calcule e salve a fatura do mês
+5. Enquanto estiver **pendente/vencida**, o sistema alerta por e-mail a cada 8h
+6. Clique em **Marcar como paga** para parar os alertas
 
 ## Scripts
 
-- `npm run dev` — desenvolvimento
+- `npm run dev` — desenvolvimento (com headers de segurança)
 - `npm run build` — build de produção
 - `npm run preview` — preview do build
-
-## Observações
-
-- E-mail automático usa Resend (plano gratuito)
-- Sem `.env` válido, o app mostra a tela de configuração
-- Cada cliente só vê as próprias faturas (RLS)
+- `npm run test:security` — pentest controlado / checks automatizados
