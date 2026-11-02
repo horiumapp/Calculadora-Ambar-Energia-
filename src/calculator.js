@@ -4,6 +4,14 @@ import {
 } from "./lib/format.js";
 import { fetchBills, upsertBill, setBillPaid, clearBills } from "./lib/bills.js";
 import { computeBillTotals, validateBillInputs } from "./lib/validation.js";
+import {
+  queueBill,
+  listQueuedBills,
+  flushQueuedBills,
+  removeQueuedBill,
+  isProbablyOffline,
+  watchOnline,
+} from "./lib/offlineSync.js";
 
 const $ = (id) => document.getElementById(id);
 const number = (id) => Number($(id).value);
@@ -12,7 +20,10 @@ let latest = null;
 let selectedMonthKey = null;
 let monthDrafts = {};
 let billsCache = [];
+let pendingQueue = [];
 let currentUserId = null;
+let syncing = false;
+let stopWatchOnline = null;
 
 export function getLatest() {
   return latest;
@@ -93,6 +104,177 @@ function writeFormDraft(draft) {
   if (draft.factor != null && draft.factor !== "") $("factor").value = draft.factor;
   if (draft.rate != null && draft.rate !== "") $("rate").value = draft.rate;
   if (draft.extras != null && draft.extras !== "") $("extras").value = draft.extras;
+}
+
+function setImportStatus(message, kind = "") {
+  const el = $("import-status");
+  if (!el) return;
+  if (!message) {
+    el.hidden = true;
+    el.textContent = "";
+    el.className = "import-status";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+  el.className = `import-status${kind ? ` is-${kind}` : ""}`;
+}
+
+function renderImportFields(parsed) {
+  const list = $("import-fields");
+  if (!list) return;
+  const rows = [
+    ["Mês", parsed.monthKey || "—"],
+    ["Leitura anterior", parsed.previous != null ? String(parsed.previous) : "—"],
+    ["Leitura atual", parsed.current != null ? String(parsed.current) : "—"],
+    ["Constante", parsed.factor != null ? String(parsed.factor) : "—"],
+    ["Tarifa", parsed.rate != null ? String(parsed.rate) : "—"],
+    ["COSIP", parsed.extras != null ? String(parsed.extras) : "—"],
+  ];
+  list.hidden = false;
+  list.innerHTML = rows
+    .map(([label, value]) => `<li><span>${label}</span><strong>${value}</strong></li>`)
+    .join("");
+}
+
+function applyImportedBill(parsed) {
+  const fromMonthKey = selectedMonthKey;
+  if (parsed.monthKey) {
+    $("bill-month-input").value = parsed.monthKey;
+    selectedMonthKey = parsed.monthKey;
+    syncMonthLabels();
+  }
+
+  const draft = {
+    previous: parsed.previous != null ? String(parsed.previous) : $("previous").value,
+    current: parsed.current != null ? String(parsed.current) : $("current").value,
+    factor: parsed.factor != null ? String(parsed.factor) : $("factor").value,
+    rate: parsed.rate != null ? String(parsed.rate) : $("rate").value,
+    extras: parsed.extras != null ? String(parsed.extras) : $("extras").value,
+  };
+  writeFormDraft(draft);
+  snapshotMonthDraft(selectedMonthKey || fromMonthKey);
+  renderImportFields(parsed);
+  refreshResultFromForm();
+  if (!latest) calculate();
+}
+
+function mapQueuedToBill(item) {
+  const payload = item.payload || {};
+  let totals = { consumption: 0, energy: 0, total: 0 };
+  try {
+    totals = computeBillTotals({
+      previous: payload.previous,
+      current: payload.current,
+      factor: payload.factor,
+      rate: payload.rate,
+      extras: payload.extras,
+    });
+  } catch {
+    // keep zeros
+  }
+  const dueDate = dueDateFromMonth(payload.monthKey);
+  return {
+    id: null,
+    localId: item.localId,
+    syncPending: true,
+    monthKey: payload.monthKey,
+    monthLabel: formatMonthShort(payload.monthKey),
+    previous: Number(payload.previous),
+    current: Number(payload.current),
+    factor: Number(payload.factor),
+    rate: Number(payload.rate),
+    extras: Number(payload.extras),
+    consumption: totals.consumption,
+    energy: totals.energy,
+    total: totals.total,
+    dueDate,
+    status: payload.status === "paid" ? "paid" : "pending",
+    date: item.queuedAt ? new Date(item.queuedAt).toLocaleDateString("pt-BR") : "—",
+  };
+}
+
+function mergeBillsWithQueue(remoteBills, queued) {
+  const byMonth = new Map(remoteBills.map((item) => [item.monthKey, item]));
+  for (const queuedItem of queued) {
+    byMonth.set(queuedItem.monthKey, mapQueuedToBill(queuedItem));
+  }
+  return [...byMonth.values()].sort((a, b) => String(a.monthKey).localeCompare(String(b.monthKey)));
+}
+
+function updateSyncBanner({ synced = 0, remaining = pendingQueue.length, message = "" } = {}) {
+  const banner = $("sync-banner");
+  if (!banner) return;
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+
+  if (offline) {
+    banner.hidden = false;
+    banner.className = "sync-banner is-offline";
+    banner.textContent = remaining
+      ? `Sem internet. ${remaining} fatura(s) salva(s) neste aparelho serão enviadas ao conectar.`
+      : "Sem internet. Você pode importar e salvar; a sincronização ocorre ao ficar online.";
+    return;
+  }
+
+  if (remaining > 0) {
+    banner.hidden = false;
+    banner.className = "sync-banner";
+    banner.textContent = message || `${remaining} fatura(s) aguardando sincronização com a nuvem.`;
+    return;
+  }
+
+  if (synced > 0) {
+    banner.hidden = false;
+    banner.className = "sync-banner is-ok";
+    banner.textContent = `${synced} fatura(s) sincronizada(s) com sucesso.`;
+    return;
+  }
+
+  if (message) {
+    banner.hidden = false;
+    banner.className = "sync-banner";
+    banner.textContent = message;
+    return;
+  }
+
+  banner.hidden = true;
+  banner.textContent = "";
+  banner.className = "sync-banner";
+}
+
+async function refreshPendingQueue() {
+  if (!currentUserId) {
+    pendingQueue = [];
+    return [];
+  }
+  pendingQueue = await listQueuedBills(currentUserId);
+  return pendingQueue;
+}
+
+async function syncPendingBills() {
+  if (!currentUserId || syncing) return;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    updateSyncBanner({ remaining: pendingQueue.length });
+    return;
+  }
+  syncing = true;
+  try {
+    const result = await flushQueuedBills(currentUserId);
+    await refreshPendingQueue();
+    if (result.synced > 0) {
+      const remote = await fetchBills(currentUserId);
+      billsCache = mergeBillsWithQueue(remote, pendingQueue);
+      renderDashboard();
+    }
+    updateSyncBanner(result);
+  } catch (error) {
+    updateSyncBanner({
+      remaining: pendingQueue.length,
+      message: error.message || "Falha ao sincronizar faturas pendentes.",
+    });
+  } finally {
+    syncing = false;
+  }
 }
 
 function snapshotMonthDraft(monthKey) {
@@ -297,6 +479,20 @@ function updateStatusPanel(bill) {
     return;
   }
 
+  if (bill.syncPending) {
+    badge.textContent = "Salva offline";
+    badge.className = "status-badge status-muted";
+    markPaidBtn.disabled = true;
+    markPaidBtn.title = "Sincronize a fatura antes de alterar o status";
+    markPaidBtn.textContent = "Aguardando sync";
+    if (actionHint) {
+      actionHint.hidden = false;
+      actionHint.textContent = "Fatura salva neste aparelho. Será enviada automaticamente quando houver internet.";
+    }
+    alertBox.hidden = true;
+    return;
+  }
+
   const status = bill.status || "pending";
   badge.textContent = statusLabel(status);
   badge.className = `status-badge status-${status}`;
@@ -360,18 +556,20 @@ function renderDashboard() {
   $("history-body").innerHTML = "";
   [...items].reverse().forEach((item) => {
     const tr = document.createElement("tr");
+    const statusText = item.syncPending ? "Offline" : statusLabel(item.status);
     [
       item.monthLabel,
       kwh(item.consumption),
       Number(item.rate).toLocaleString("pt-BR", { minimumFractionDigits: 6, maximumFractionDigits: 6 }),
       money(item.total),
-      statusLabel(item.status),
+      statusText,
       formatDateBr(item.dueDate),
     ].forEach((value) => {
       const td = document.createElement("td");
       td.textContent = value;
       if (value === "Vencida") td.className = "cell-danger";
       if (value === "Paga") td.className = "cell-ok";
+      if (value === "Offline") td.className = "cell-warn";
       tr.appendChild(td);
     });
     $("history-body").appendChild(tr);
@@ -383,7 +581,19 @@ function renderDashboard() {
 export async function reloadBills(userId = currentUserId) {
   if (!userId) return;
   currentUserId = userId;
-  billsCache = await fetchBills(userId);
+  let remote = [];
+  try {
+    remote = await fetchBills(userId);
+  } catch (error) {
+    if (!isProbablyOffline(error)) throw error;
+    remote = billsCache.filter((item) => !item.syncPending);
+    updateSyncBanner({
+      remaining: pendingQueue.length,
+      message: "Sem conexão para carregar o histórico na nuvem. Exibindo dados locais.",
+    });
+  }
+  await refreshPendingQueue();
+  billsCache = mergeBillsWithQueue(remote, pendingQueue);
   billsCache.forEach((item) => {
     const draft = draftFromSaved(item);
     if (draft) monthDrafts[item.monthKey] = draft;
@@ -394,6 +604,8 @@ export async function reloadBills(userId = currentUserId) {
     updateStatusPanel(current);
   }
   renderDashboard();
+  updateSyncBanner({ remaining: pendingQueue.length });
+  await syncPendingBills();
 }
 
 export function initCalculator(userId) {
@@ -434,12 +646,48 @@ export function initCalculator(userId) {
     try {
       $("save").disabled = true;
       $("save").textContent = "Salvando...";
-      const saved = await upsertBill(currentUserId, latest);
-      latest = saved;
-      snapshotMonthDraft(saved.monthKey);
-      await reloadBills(currentUserId);
-      updateStatusPanel(saved);
-      alert("Fatura salva no histórico mensal.");
+
+      const offlineNow = typeof navigator !== "undefined" && navigator.onLine === false;
+      if (offlineNow) {
+        await queueBill(currentUserId, latest);
+        await refreshPendingQueue();
+        billsCache = mergeBillsWithQueue(
+          billsCache.filter((item) => !item.syncPending && item.monthKey !== latest.monthKey),
+          pendingQueue,
+        );
+        const local = billsCache.find((item) => item.monthKey === latest.monthKey);
+        latest = local || latest;
+        snapshotMonthDraft(latest.monthKey);
+        renderDashboard();
+        updateStatusPanel(latest);
+        updateSyncBanner({ remaining: pendingQueue.length });
+        alert("Sem internet. Fatura salva neste aparelho e será sincronizada automaticamente.");
+        return;
+      }
+
+      try {
+        const saved = await upsertBill(currentUserId, latest);
+        latest = saved;
+        snapshotMonthDraft(saved.monthKey);
+        await reloadBills(currentUserId);
+        updateStatusPanel(saved);
+        alert("Fatura salva no histórico mensal.");
+      } catch (error) {
+        if (!isProbablyOffline(error)) throw error;
+        await queueBill(currentUserId, latest);
+        await refreshPendingQueue();
+        billsCache = mergeBillsWithQueue(
+          billsCache.filter((item) => !item.syncPending && item.monthKey !== latest.monthKey),
+          pendingQueue,
+        );
+        const local = billsCache.find((item) => item.monthKey === latest.monthKey);
+        latest = local || latest;
+        snapshotMonthDraft(latest.monthKey);
+        renderDashboard();
+        updateStatusPanel(latest);
+        updateSyncBanner({ remaining: pendingQueue.length });
+        alert("Falha de rede. Fatura salva offline e será sincronizada ao reconectar.");
+      }
     } catch (error) {
       alert(error.message || "Não foi possível salvar a fatura.");
     } finally {
@@ -453,10 +701,16 @@ export function initCalculator(userId) {
     if (!confirm("Deseja apagar todo o histórico mensal da sua conta?")) return;
     try {
       await clearBills(currentUserId);
+      const queued = await listQueuedBills(currentUserId);
+      for (const item of queued) {
+        await removeQueuedBill(item.localId);
+      }
+      pendingQueue = [];
       billsCache = [];
       monthDrafts = {};
       latest = null;
       updateStatusPanel(null);
+      updateSyncBanner({ remaining: 0 });
       renderDashboard();
     } catch (error) {
       alert(error.message || "Não foi possível limpar o histórico.");
@@ -476,6 +730,48 @@ export function initCalculator(userId) {
       alert(error.message || "Não foi possível atualizar o status.");
     }
   });
+
+  const fileInput = $("bill-file-input");
+  if (fileInput) {
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = "";
+      if (!file) return;
+      try {
+        fileInput.disabled = true;
+        setImportStatus("Lendo fatura…");
+        const { importBillFromFile } = await import("./lib/billImport.js");
+        const parsed = await importBillFromFile(file, (status) => setImportStatus(status));
+        applyImportedBill(parsed);
+        const missing = [];
+        if (parsed.monthKey == null) missing.push("mês");
+        if (parsed.previous == null) missing.push("leitura anterior");
+        if (parsed.current == null) missing.push("leitura atual");
+        if (parsed.rate == null) missing.push("tarifa");
+        if (parsed.extras == null) missing.push("COSIP");
+        if (missing.length) {
+          setImportStatus(
+            `Dados parcialmente preenchidos. Revise: ${missing.join(", ")}. Depois salve no histórico.`,
+            "ok",
+          );
+        } else {
+          setImportStatus("Fatura lida. Revise os valores e salve no histórico.", "ok");
+        }
+      } catch (error) {
+        setImportStatus(error.message || "Não foi possível ler a fatura.", "error");
+      } finally {
+        fileInput.disabled = false;
+      }
+    });
+  }
+
+  if (stopWatchOnline) stopWatchOnline();
+  stopWatchOnline = watchOnline(async (online) => {
+    await refreshPendingQueue();
+    updateSyncBanner({ remaining: pendingQueue.length });
+    if (online) await syncPendingBills();
+  });
+  updateSyncBanner({ remaining: pendingQueue.length });
 
   window.addEventListener("resize", () => {
     if (billsCache.length) drawChart(billsCache);
