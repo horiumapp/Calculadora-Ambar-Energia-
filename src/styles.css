@@ -644,6 +644,43 @@ input[type="month"]{color-scheme:light}
   font-size:13px;
   line-height:1.45;
 }
+.import-bill .import-hint strong{color:var(--navy);font-weight:600}
+.import-guide{
+  margin:0 0 14px;
+  padding:12px;
+  border:1px solid var(--line);
+  background:linear-gradient(180deg,#fffdf8 0%,#f7f9fc 100%);
+}
+.import-guide-svg{
+  display:block;
+  width:100%;
+  max-width:360px;
+  height:auto;
+  margin:0 auto;
+}
+.import-guide-tips{
+  margin:10px 0 0;
+  padding-top:10px;
+  border-top:1px dashed #d7dee8;
+  color:var(--ink);
+  font-size:12px;
+  line-height:1.45;
+}
+.import-guide-tips strong{
+  display:block;
+  margin-bottom:6px;
+  color:var(--navy);
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.02em;
+  text-transform:uppercase;
+}
+.import-guide-tips ul{
+  margin:0;
+  padding-left:18px;
+}
+.import-guide-tips li{margin:0 0 4px}
+.import-guide-tips em{font-style:normal;font-weight:600;color:var(--navy)}
 .import-actions{display:flex;gap:10px;flex-wrap:wrap}
 .import-btn{
   display:inline-flex;
