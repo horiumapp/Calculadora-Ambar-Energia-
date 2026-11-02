@@ -342,13 +342,27 @@ function extractConsumptionHint(text) {
     const value = parseBrNumber(labeled[1]);
     if (value != null && value > 0 && value < 100000) return value;
   }
-  // Linha En Ativa ... medido faturado (dois iguais no fim)
+  // Linha En Ativa ... medido faturado (iguais ou quase iguais no fim)
   const row = normalized.match(
-    /en\s*[a-z]{0,12}\s*total[\s\S]{0,80}?(\d{2,5})\s+\1\b/i,
+    /en\s*[a-z]{0,12}\s*total[\s\S]{0,120}?(\d{2,4})\s+(\d{2,4})\b/i,
   );
   if (row) {
-    const value = parseBrNumber(row[1]);
-    if (value != null && value > 0 && value < 100000) return value;
+    const a = parseBrNumber(row[1]);
+    const b = parseBrNumber(row[2]);
+    if (a != null && b != null && Math.abs(a - b) <= 5) {
+      return Math.max(a, b);
+    }
+  }
+  // OCR sparse: "333" perto de total a pagar
+  const nearTotal = normalized.match(
+    /\b(\d{2,4})\b[^\d]{0,20}(\d{2,4}[.,]\d{2})\b/,
+  );
+  if (nearTotal) {
+    const kwh = parseBrNumber(nearTotal[1]);
+    const money = parseBrNumber(nearTotal[2]);
+    if (kwh != null && money != null && kwh >= 50 && kwh <= 5000 && money > 20) {
+      return kwh;
+    }
   }
   return null;
 }
@@ -367,15 +381,19 @@ export function parseBillText(ocrText) {
     consumptionHint: extractConsumptionHint(text),
   };
 
-  // Se leituras e consumo não batem, descarta o par (OCR cortou dígito).
+  // Se a leitura atual e o consumo batem, recalcula a anterior (OCR costuma errar 1 dígito).
   if (
-    raw.previous != null
-    && raw.current != null
+    raw.current != null
     && raw.consumptionHint != null
-    && Math.abs((raw.current - raw.previous) * (raw.factor || 1) - raw.consumptionHint) > Math.max(8, raw.consumptionHint * 0.08)
+    && raw.consumptionHint > 0
   ) {
-    raw.previous = null;
-    raw.current = null;
+    const factor = raw.factor || 1;
+    const expectedPrevious = raw.current - (raw.consumptionHint / factor);
+    if (Number.isInteger(expectedPrevious) && expectedPrevious >= 0) {
+      const mismatch = raw.previous == null
+        || Math.abs((raw.current - raw.previous) * factor - raw.consumptionHint) > Math.max(5, raw.consumptionHint * 0.05);
+      if (mismatch) raw.previous = expectedPrevious;
+    }
   }
 
   const parsed = sanitizeParsed(raw);
